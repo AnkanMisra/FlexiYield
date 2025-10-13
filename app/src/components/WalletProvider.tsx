@@ -12,7 +12,12 @@ export default function WalletProvider({ children }: { children: React.ReactNode
   const endpoint = useMemo(() => {
     const rpc = process.env.NEXT_PUBLIC_DEVNET_RPC;
     if (!rpc) {
-      console.warn('Missing NEXT_PUBLIC_DEVNET_RPC; falling back to clusterApiUrl(Devnet).');
+      console.warn('[WalletProvider] Missing NEXT_PUBLIC_DEVNET_RPC; falling back to clusterApiUrl(Devnet).');
+      if (process.env.NODE_ENV === 'production') {
+        console.warn(
+          '[WalletProvider] Production build running without dedicated RPC endpoint; configure NEXT_PUBLIC_DEVNET_RPC to avoid shared cluster limits.'
+        );
+      }
     }
     return rpc ?? clusterApiUrl(network);
   }, [network]);
