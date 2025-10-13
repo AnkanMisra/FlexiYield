@@ -1,0 +1,24 @@
+[workspace]
+members = [
+  "programs/basket",
+  "programs/strategy",
+  "programs/rebalance"
+]
+
+[programs.devnet]
+basket = "BaskEt11111111111111111111111111111111111111"
+strategy = "StraTegy1111111111111111111111111111111111"
+rebalance = "RebaLanCe11111111111111111111111111111111"
+
+[registry]
+url = "https://api.anchor.projectserum.com"
+
+[provider]
+cluster = "Devnet"
+wallet = "~/.config/solana/id.json"
+
+[idl]
+out = "app/src/idl"
+
+[scripts]
+deploy = "pnpm --dir app ts-node scripts/deploy-programs.ts"
