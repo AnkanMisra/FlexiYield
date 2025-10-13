@@ -29,9 +29,11 @@ pub mod basket {
     }
 }
 
+/// Placeholder parameter container; will include basket mint, authority seeds, and vault configs.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct InitializeBasketParams {}
 
+/// Placeholder parameter container for future governance-controlled config updates.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct UpdateConfigParams {}
 
