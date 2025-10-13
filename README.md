@@ -28,16 +28,20 @@ It provides rules-based rebalancing, de-peg protection, and real-time analytics 
   pnpm install
   ```
 
-2. **Run the Next.js dev server**
+2. **Configure environment**
+  ```bash
+  cp .env.example .env.local
+  # Edit .env.local with your Devnet RPC and token mint addresses
+  ```
+
+3. **Run the Next.js dev server**
   ```bash
   pnpm dev
   ```
   The UI is available at `http://localhost:3000`.
 
-3. **Build Anchor programs (optional for now)**
+4. **Build Anchor programs (optional for now)**
   ```bash
   cd ..
   anchor build
   ```
-
-> Configure `.env.local` inside `app/` with the required `DEVNET_RPC`, `MINT_USDCd`, `MINT_USDTd`, and `MINT_FLEX` values before interacting with Solana.

@@ -11,7 +11,7 @@ strategy = "StraTegy1111111111111111111111111111111111"
 rebalance = "RebaLanCe11111111111111111111111111111111"
 
 [registry]
-url = "https://anchor.projectserum.com"
+url = "https://api.anchor.projectserum.com"
 
 [provider]
 cluster = "Devnet"
@@ -21,4 +21,4 @@ wallet = "~/.config/solana/id.json"
 out = "app/src/idl"
 
 [scripts]
-deploy = "pnpm --dir app ts-node ../scripts/deploy-programs.ts"
+deploy = "pnpm --dir app ts-node scripts/deploy-programs.ts"

@@ -6,7 +6,7 @@ System setup:
   3) Project_Rules/prompt.txt
   4) Project_Rules/agent.txt
   5) Project_Rules/chat-title.txt
-  6) AGENT_RULES_AND_GUIDE.md
+   6) Project_Rules/AGENT_RULES_AND_GUIDE.md
 - Treat rules.md as the highest priority, then project.md, then agent.txt, then prompt.txt, then chat-title.txt.
 
 Project constraints:
@@ -22,7 +22,7 @@ Your tasks (execute sequentially, committing at logical checkpoints):
    - app (Next.js + TypeScript)
    - scripts (airdrop, mints, seed, deploy, demo helpers)
    - app/src/idl (IDL output folder)
-   - Add CONTRIBUTING.md pointer to Project_Rules/* and AGENT_RULES_AND_GUIDE.md
+   - Add CONTRIBUTING.md pointer to Project_Rules/* and Project_Rules/AGENT_RULES_AND_GUIDE.md
 2) Initialize Next.js app (TypeScript) in ./app using pnpm:
    - Add: @solana/wallet-adapter-react, @solana/wallet-adapter-wallets, @solana/wallet-adapter-react-ui, @solana/web3.js, @coral-xyz/anchor, @solana/spl-token
    - Create a minimal layout: wallet connect, balances panel placeholders, composition chart placeholder, admin panel route (/admin).
@@ -51,7 +51,7 @@ Your tasks (execute sequentially, committing at logical checkpoints):
    - Deposit/redeem math, NAV, caps, delta computation
 9) Documentation:
    - Update README.md with one-command setup/run, demo steps, and constraints
-   - Ensure CONTRIBUTING.md and AGENT_RULES_AND_GUIDE.md are present and point to Project_Rules/*
+   - Ensure CONTRIBUTING.md and Project_Rules/AGENT_RULES_AND_GUIDE.md are present and point to Project_Rules/*
 
 Important:
 - Do NOT add mainnet, bridges, real money market integrations, or external APIs in critical paths.
