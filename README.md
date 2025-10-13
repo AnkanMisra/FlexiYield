@@ -1,11 +1,21 @@
+<h1 align="center">FlexiYield</h1>
+
 <p align="center">
-  <h1>FlexiYield</h1>
-  <img src="https://github.com/user-attachments/assets/914406e9-f41d-492e-962b-fb2263040d0b" alt="FlexiYield Logo" width="180" height="180">
+  <img width="330" height="301" alt="Screenshot 2025-10-13 at 19 54 05" src="https://github.com/user-attachments/assets/b0948993-7b98-439c-863c-8e4e5aa3f653" />
 </p>
 
-**FlexiYield** is a **Solana-native dynamic stablecoin basket** that transforms **USDC/USDT** into an **auto-optimized, diversified portfolio**.  
-It offers **rules-based rebalancing**, **de-peg protection**, and **real-time analytics** — all within a seamless DeFi experience.
+<p align="center">
+  <b>Solana-native dynamic stablecoin basket for auto-optimized, diversified yield.</b>
+</p>
 
 ---
 
-> 💡 *Deposit. Mint. Earn. Flexibly yield with confidence.*
+<p align="center">
+FlexiYield turns USDC/USDT into an auto-optimized, diversified portfolio.  
+</p>
+
+ <p align="center"> 
+It provides rules-based rebalancing, de-peg protection, and real-time analytics — all within a seamless DeFi experience.
+</p>
+
+---
