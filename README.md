@@ -19,3 +19,29 @@ It provides rules-based rebalancing, de-peg protection, and real-time analytics 
 </p>
 
 ---
+
+## Getting Started
+
+1. **Install dependencies**
+  ```bash
+  cd app
+  pnpm install
+  ```
+
+2. **Configure environment**
+  ```bash
+  cp .env.example .env.local
+  # Edit .env.local with your Devnet RPC and token mint addresses
+  ```
+
+3. **Run the Next.js dev server**
+  ```bash
+  pnpm dev
+  ```
+  The UI is available at `http://localhost:3000`.
+
+4. **Build Anchor programs (optional for now)**
+  ```bash
+  cd ..
+  anchor build
+  ```
