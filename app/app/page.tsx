@@ -1,5 +1,5 @@
-import BalancePanel from "./src/components/BalancePanel";
-import CompositionChart from "./src/components/CompositionChart";
+import BalancePanel from "../src/components/BalancePanel";
+import CompositionChart from "../src/components/CompositionChart";
 
 export default function Home() {
 	return (
