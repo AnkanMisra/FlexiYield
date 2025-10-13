@@ -1,11 +1,11 @@
 [phases.setup]
 nixPkgs = ["nodejs_20", "pnpm"]
 
-[phases.install]
-cmds = ["cd app && pnpm install --frozen-lockfile"]
-
 [phases.build]
-cmds = ["cd app && pnpm run build"]
+cmds = [
+	"cd app && pnpm install --frozen-lockfile",
+	"cd app && pnpm run build"
+]
 
 [start]
 cmd = "cd app && pnpm run start -- --hostname 0.0.0.0 --port ${PORT:-3000}"
