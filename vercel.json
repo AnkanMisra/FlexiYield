@@ -1,10 +1,7 @@
 {
   "version": 2,
   "framework": "nextjs",
-  "installCommand": "pnpm --dir app install --frozen-lockfile",
-  "buildCommand": "pnpm --dir app run build",
-  "outputDirectory": "app/.next",
-  "env": {
-    "NEXT_PUBLIC_DEVNET_RPC": "${NEXT_PUBLIC_DEVNET_RPC}"
-  }
+  "installCommand": "cd app && pnpm install --frozen-lockfile",
+  "buildCommand": "cd app && pnpm run build",
+  "outputDirectory": "app/.next"
 }
