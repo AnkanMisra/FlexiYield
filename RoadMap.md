@@ -14,6 +14,8 @@ This roadmap tracks delivery of the 5-day Solana devnet MVP defined in `Project_
 - ✅ Repository scaffold, Next.js app shell, and Anchor workspace skeleton created.
 - ✅ Dashboard landing page structure (`app/page.tsx`) with placeholder metrics and CTAs.
 - ✅ Anchor workspace configured (`Anchor.toml`, root `Cargo.toml`, program crates with stub instructions/events).
+- ✅ Deployment configurations (Vercel, Nixpacks) finalized and tested.
+- ✅ Frontend deployed successfully with wallet adapter infrastructure in place.
 - ☐ Basket/Strategy/Rebalance program logic, PDAs, and instruction handlers still pending implementation.
 - ☐ Frontend Solana integration, PDA data fetching, and transactional flows outstanding.
 - ☐ TypeScript operational scripts, tests, and documentation updates not yet implemented.
@@ -65,9 +67,127 @@ This roadmap tracks delivery of the 5-day Solana devnet MVP defined in `Project_
 - ☐ **Roadmap maintenance**: update this file as milestones complete and new tasks emerge (post-MVP improvements go in a future roadmap section).
 - ☐ **PR checklist adherence**: ensure each pull request confirms governance file review and devnet-only compliance.
 
-## Next Immediate Actions
-1. Flesh out basket program account structures and instruction bodies to enable actual deposits/redemptions.
-2. Stand up TypeScript scripts to create devnet mints and seed balances; wire them into deployment workflow.
-3. Hook up frontend wallet integration and begin reading mock data from soon-to-be-generated IDLs to validate UI wiring.
+## Work Plan: Day 2 Onwards (Starting Oct 14, 2025)
+
+### Day 2: Core Program Implementation
+**Priority: Basket Program Foundation**
+1. **Basket Program PDAs & State** (`programs/basket/src/lib.rs`)
+   - Define `BasketConfig` account structure (admin authority, NAV, FLEX supply, vaults)
+   - Implement PDA derivations for Config, USDCd vault, USDTd vault, FLEX mint authority
+   - Add proper account validation and constraints with `#[account(...)]` macros
+
+2. **Basket Core Instructions**
+   - `initialize_basket`: Create config PDA, initialize token vaults, set mint authorities
+   - `deposit_usdc`: Accept USDCd, mint FLEX based on NAV, emit `DepositEvent`
+   - `redeem_flex`: Burn FLEX, return USDCd proportionally, emit `RedeemEvent`
+   - Add decimal validation (6 decimals) and arithmetic safety checks
+
+3. **Testing Setup**
+   - Write Anchor tests for initialize → deposit → redeem flow
+   - Verify NAV calculations and event emissions
+
+**Deliverables:** Working basket program with deposit/redeem logic testable on devnet
+
+---
+
+### Day 3: Strategy Program & Script Infrastructure
+**Priority: Strategy Logic + Operational Scripts**
+
+1. **Strategy Program** (`programs/strategy/src/lib.rs`)
+   - Define `StrategyConfig` PDA with target weights, drift thresholds, asset caps
+   - Implement `set_targets`, `set_thresholds`, `set_caps` with admin-only access
+   - Add oracle signal fields (APY flags, peg status) with setters
+   - Ensure read-friendly account layout for frontend queries
+
+2. **TypeScript Scripts** (`scripts/`)
+   - `airdrop-devnet-sol.ts`: Fund keypairs with devnet SOL
+   - `create-mints.ts`: Create USDCd, USDTd, FLEX mints; write addresses to `.env`
+   - `seed-balances.ts`: Fund demo accounts and vaults with initial tokens
+   - `deploy-programs.ts`: Build/deploy all programs, capture IDs, copy IDLs to `app/src/idl/`
+   - Wire scripts into package.json or document run sequence
+
+3. **Environment Configuration**
+   - Complete `.env.example` with all required variables
+   - Document script execution order in README
+   - Test full deploy → mint → seed pipeline
+
+**Deliverables:** Strategy program deployed, scripts operational, devnet environment reproducible
+
+---
+
+### Day 4: Rebalance Program & Frontend Integration
+**Priority: Rebalance Logic + Live Data Display**
+
+1. **Rebalance Program** (`programs/rebalance/src/lib.rs`)
+   - Implement `rebalance_once`: compute deltas from strategy targets vs current holdings
+   - Add swap simulation or DEX CPI path (devnet Jupiter/Orca or mock transfer)
+   - Enforce per-asset caps, update basket NAV and vault balances
+   - Emit `RebalancedEvent` with before/after composition
+   - Add guardian pause/unpause controls
+
+2. **Frontend Data Fetching** (`app/src/`)
+   - Create hooks to read BasketConfig, StrategyConfig PDAs using Anchor client
+   - Display live NAV, FLEX supply, user wallet holdings
+   - Show current composition (USDCd/USDTd percentages) with chart component
+   - Surface oracle signals (APY/peg badges)
+
+3. **Transaction Flows UI**
+   - Deposit form: input USDCd amount, estimate FLEX output, submit transaction
+   - Withdraw form: input FLEX amount, estimate USDCd return, submit transaction
+   - Show transaction confirmation with Solana explorer links
+   - Add loading states and error handling
+
+**Deliverables:** Rebalance program functional, frontend displays live devnet data, deposit/redeem flows work end-to-end
+
+---
+
+### Day 5: Admin Panel, Testing & Documentation
+**Priority: Admin Controls + Polish + Handoff**
+
+1. **Admin Panel** (`app/app/admin/page.tsx` or modal)
+   - Forms to update strategy targets, thresholds, caps
+   - Toggle oracle signals (mock APY/peg indicators)
+   - "Rebalance Now" button to trigger `rebalance_once`
+   - Display recent rebalance events with composition changes
+   - Protect routes/UI with admin wallet check
+
+2. **Comprehensive Testing**
+   - Anchor integration tests for all programs
+   - Frontend: manual smoke test checklist (wallet connect, deposit, withdraw, rebalance)
+   - End-to-end devnet flow: fund → deploy → seed → interact → verify on explorer
+   - Capture screenshots/recording for demo
+
+3. **Documentation & Cleanup**
+   - Update README with complete setup instructions
+   - Document environment variables, script usage, deployment steps
+   - Add troubleshooting section for common devnet issues
+   - Record demo video showing deposit → rebalance → withdraw flow
+   - Final governance review: confirm devnet-only, no mainnet references
+
+4. **Code Review & Refinement**
+   - Review all error handling and edge cases
+   - Ensure consistent logging and event emissions
+   - Check decimal arithmetic for overflow safety
+   - Validate admin authority checks across all programs
+
+**Deliverables:** Fully functional MVP on devnet, admin controls operational, documentation complete, demo-ready
+
+---
+
+## Post-MVP Enhancements (Future Backlog)
+- Real oracle integration (Pyth/Switchboard)
+- Multi-hop DEX routing for optimal swaps
+- Historical analytics and performance tracking
+- Automated rebalancing scheduler (cron/clockwork)
+- Enhanced UX: portfolio projections, gas estimates
+- Mainnet preparation (after thorough audit)
+
+---
+
+## Daily Standup Questions
+1. **What did we complete yesterday?**
+2. **What are we working on today?**
+3. **Any blockers or risks?**
+4. **Are we on track for the 5-day MVP deadline?**
 
 Maintaining this roadmap alongside governance files ensures we stay within the mandated scope while tracking progress toward the demo-ready MVP. Updates should reflect the latest completion status after each major change.
