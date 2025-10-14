@@ -1,15 +1,21 @@
 import { Keypair, PublicKey } from '@solana/web3.js';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 
 /**
  * 🔒 SECURE WALLET UTILITY - PRODUCTION READY
  *
  * SECURITY NOTICE:
  * - NEVER store private keys in plaintext files
- * - NEVER log private keys to console
+ * - NEVER log private keys to console in production
  * - NEVER commit private keys to version control
  * - ALWAYS use secure key management in production
  * - Consider HSM or cloud KMS for production deployments
+ *
+ * SECRET KEY PRINTING:
+ * - Set PRINT_SECRET_KEY=true to enable secret key output (development only)
+ * - Use SAVE_SECRET_FILE=path to save secret key to file with restricted permissions
+ * - Secret keys are hidden by default for security
  */
 
 // Validate environment variables are properly formatted
@@ -21,7 +27,43 @@ function validatePrivateKey(keyString: string): Uint8Array {
     }
     return Uint8Array.from(keyArray);
   } catch (error) {
-    throw new Error(`Failed to parse private key: ${error.message}`);
+    throw new Error(`Failed to parse private key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Check if secret key printing is explicitly enabled
+function isSecretPrintingEnabled(): boolean {
+  return process.env.PRINT_SECRET_KEY === 'true';
+}
+
+// Get file path for saving secret key
+function getSecretFilePath(): string | null {
+  const filePath = process.env.SAVE_SECRET_FILE;
+  return filePath || null;
+}
+
+// Securely handle secret key output
+function handleSecretKeyOutput(keypair: Keypair): void {
+  const secretKeyArray = Array.from(keypair.secretKey);
+  const secretKeyString = JSON.stringify(secretKeyArray);
+  
+  if (isSecretPrintingEnabled()) {
+    console.log('🔐 PRIVATE KEY (handle with extreme care - DO NOT commit):');
+    console.log(secretKeyString);
+  } else {
+    console.log('🔐 Private key generated (hidden for security)');
+    console.log('   Set PRINT_SECRET_KEY=true to display secret key');
+  }
+
+  const filePath = getSecretFilePath();
+  if (filePath) {
+    try {
+      // Write with restrictive permissions (0o600 = owner read/write only)
+      fs.writeFileSync(filePath, secretKeyString, { mode: 0o600 });
+      console.log(`💾 Secret key saved to: ${filePath} (with restricted permissions)`);
+    } catch (error) {
+      console.error(`❌ Failed to save secret key to file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }
 
@@ -53,7 +95,7 @@ export function loadWallet(): Keypair {
 
     return keypair;
   } catch (error) {
-    throw new Error(`❌ SECURITY ERROR: Failed to load wallet: ${error.message}`);
+    throw new Error(`❌ SECURITY ERROR: Failed to load wallet: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -69,8 +111,9 @@ export function generateDevnetWallet(): Keypair {
   const keypair = Keypair.generate();
 
   console.log(`📋 New wallet public key: ${keypair.publicKey.toBase58()}`);
-  console.log('🔐 PRIVATE KEY (handle with extreme care - DO NOT commit):');
-  console.log(JSON.stringify(Array.from(keypair.secretKey)));
+  
+  // Use secure secret key handling
+  handleSecretKeyOutput(keypair);
 
   return keypair;
 }
@@ -81,7 +124,7 @@ export function getWalletPublicKey(): PublicKey | null {
     const wallet = loadWallet();
     return wallet.publicKey;
   } catch (error) {
-    console.error('❌ Failed to load wallet public key:', error.message);
+    console.error('❌ Failed to load wallet public key:', error instanceof Error ? error.message : 'Unknown error');
     return null;
   }
 }
@@ -95,7 +138,7 @@ export function emergencyExportKey(): string {
     const wallet = loadWallet();
     return JSON.stringify(Array.from(wallet.secretKey));
   } catch (error) {
-    throw new Error(`Failed to export key: ${error.message}`);
+    throw new Error(`Failed to export key: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -106,5 +149,22 @@ export function isSecureEnvironment(): boolean {
          Boolean(process.env.WALLET_PRIVATE_KEY);
 }
 
-// Export secure wallet instance
-export const wallet = loadWallet();
+// Print usage help for secret key options
+export function printSecretKeyUsage(): void {
+  console.log('🔐 SECRET KEY OPTIONS:');
+  console.log('  Environment Variables:');
+  console.log('    PRINT_SECRET_KEY=true    - Enable secret key printing to console (development only)');
+  console.log('    SAVE_SECRET_FILE=<path>  - Save secret key to file with restricted permissions');
+  console.log('');
+  console.log('  Examples:');
+  console.log('    PRINT_SECRET_KEY=true node wallet.ts');
+  console.log('    SAVE_SECRET_FILE=./keypair.json node wallet.ts');
+  console.log('    PRINT_SECRET_KEY=true SAVE_SECRET_FILE=./keypair.json node wallet.ts');
+  console.log('');
+  console.log('  ⚠️  WARNING: Only use secret key options in development environments!');
+}
+
+// Export secure wallet instance (lazy-loaded)
+export function getWallet(): Keypair {
+  return loadWallet();
+}
