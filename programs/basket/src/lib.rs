@@ -368,12 +368,14 @@ impl BasketConfig {
     // 8 bytes: Anchor account discriminator
     // 4 bytes: bump fields (4 * u8)
     // 8 * 32 bytes: 8 Pubkey fields (admin, guardian, emergency_admin, flex_mint, usdc_mint, usdt_mint, usdc_vault, usdt_vault)
-    // 8 * 8 bytes: 8 u64/i64 fields (nav, flex_supply_snapshot, last_total_assets, max_deposit_amount, max_daily_deposit, daily_deposit_volume, paused, last_deposit_day)
+    // 7 * 8 bytes: 7 u64/i64 fields (nav, flex_supply_snapshot, last_total_assets, max_deposit_amount, max_daily_deposit, daily_deposit_volume, last_deposit_day)
+    // 1 byte: 1 bool field (paused)
     pub const SPACE: usize =
         8 +                     // discriminator
         4 +                     // bump fields: bump, mint_authority_bump, usdc_vault_bump, usdt_vault_bump
         (8 * 32) +              // 8 Pubkey fields
-        (8 * 8);                // 8 u64/i64 fields
+        (7 * 8) +               // 7 u64/i64 fields
+        1;                      // 1 bool field (total: 301 bytes)
 
     fn update_nav(&mut self, total_assets: u128, flex_supply: u128) -> Result<()> {
         require!(total_assets <= u64::MAX as u128, BasketError::MathOverflow);
