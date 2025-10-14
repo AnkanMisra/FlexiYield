@@ -1,5 +1,4 @@
 import { Keypair, PublicKey } from '@solana/web3.js';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 
 /**
@@ -131,6 +130,9 @@ export function getWalletPublicKey(): PublicKey | null {
 
 // DANGEROUS - FOR EMERGENCY USE ONLY
 export function emergencyExportKey(): string {
+  if (isSecureEnvironment()) {
+    throw new Error('❌ SECURITY ERROR: Emergency key export is not allowed in production');
+  }
   console.warn('⚠️  ⚠️  ⚠️  EMERGENCY KEY EXPORT ⚠️  ⚠️  ⚠️');
   console.warn('This should NEVER be used in production!');
 
