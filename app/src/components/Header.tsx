@@ -2,7 +2,6 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
 
 // Dynamically import WalletMultiButton to avoid hydration mismatch
 const WalletMultiButton = dynamic(
@@ -16,12 +15,6 @@ const WalletMultiButton = dynamic(
 );
 
 export default function Header() {
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
   return (
     <header className="border-b border-gray-200 bg-white shadow-sm">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
@@ -40,7 +33,7 @@ export default function Header() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-500">Devnet</span>
-          {isMounted && <WalletMultiButton />}
+          <WalletMultiButton />
         </div>
       </div>
     </header>
