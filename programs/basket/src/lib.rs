@@ -139,14 +139,16 @@ pub mod basket {
             params.amount
         } else {
             require!(total_assets_before > 0, BasketError::ZeroTotalAssets);
-            let minted = (params.amount as u128)
+            let minted_u128 = (params.amount as u128)
                 .checked_mul(flex_supply_before)
                 .ok_or(BasketError::MathOverflow)?
                 .checked_div(total_assets_before)
                 .ok_or(BasketError::ZeroNav)?;
-            require!(minted > 0, BasketError::AmountTooSmallForShare);
-            require!(minted as u64 >= params.min_flex_out, BasketError::SlippageExceeded);
-            minted as u64
+            require!(minted_u128 > 0, BasketError::AmountTooSmallForShare);
+            require!(minted_u128 <= u64::MAX as u128, BasketError::MathOverflow);
+            let minted = minted_u128 as u64;
+            require!(minted >= params.min_flex_out, BasketError::SlippageExceeded);
+            minted
         };
 
         let transfer_ctx = CpiContext::new(
@@ -198,6 +200,9 @@ pub mod basket {
             BasketError::InsufficientUserFunds
         );
 
+        let config = &ctx.accounts.config;
+        require!(!config.is_paused(), BasketError::ContractPaused);
+
         let current_time = Clock::get()?.unix_timestamp;
         let flex_supply_before = ctx.accounts.flex_mint.supply as u128;
         require!(flex_supply_before > 0, BasketError::ZeroSupply);
@@ -241,8 +246,6 @@ pub mod basket {
             .ok_or(BasketError::MathOverflow)?;
 
         let config = &mut ctx.accounts.config;
-        require!(!config.is_paused(), BasketError::ContractPaused);
-
         let mint_authority_bump = [config.mint_authority_bump];
         let signer_seeds: &[&[&[u8]]] = &[&[MINT_AUTHORITY_SEED, &mint_authority_bump]];
         let transfer_ctx = CpiContext::new_with_signer(
@@ -387,6 +390,9 @@ impl BasketConfig {
                 .ok_or(BasketError::MathOverflow)?
                 .checked_div(flex_supply)
                 .ok_or(BasketError::ZeroNav)?;
+
+            // Check for overflow before casting to u64
+            require!(nav <= u128::from(u64::MAX), BasketError::MathOverflow);
             nav as u64
         };
 
