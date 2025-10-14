@@ -56,11 +56,13 @@ pub mod strategy {
         let config = &mut ctx.accounts.config;
 
         // Validate target weights sum to 10,000 bps (100%)
+        let total_weight = targets
+            .usdc_weight_bps
+            .checked_add(targets.usdt_weight_bps)
+            .ok_or(StrategyError::InvalidTargetWeights)?;
+
         require!(
-            targets
-                .usdc_weight_bps
-                .saturating_add(targets.usdt_weight_bps)
-                == BPS_DENOMINATOR,
+            total_weight == BPS_DENOMINATOR,
             StrategyError::InvalidTargetWeights
         );
 
