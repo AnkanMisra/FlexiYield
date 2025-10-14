@@ -1,0 +1,28 @@
+{
+  "name": "flexiyield-scripts",
+  "version": "1.0.0",
+  "description": "Operational scripts for FlexiYield MVP deployment and testing",
+  "main": "index.js",
+  "scripts": {
+    "airdrop": "npx ts-node airdrop-devnet-sol.ts",
+    "create-mints": "npx ts-node create-mints.ts",
+    "seed-balances": "npx ts-node seed-balances.ts",
+    "deploy": "npx ts-node deploy-programs.ts",
+    "demo": "npx ts-node demo.ts",
+    "demo:setup": "npx ts-node demo.ts setup",
+    "demo:status": "npx ts-node demo.ts status",
+    "setup": "pnpm run airdrop && pnpm run create-mints && pnpm run seed-balances && pnpm run deploy"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.3.11",
+    "@solana/web3.js": "^1.98.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

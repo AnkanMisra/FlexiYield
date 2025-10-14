@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 const STRATEGY_CONFIG_SEED: &[u8] = b"strategy-config";
 const BPS_DENOMINATOR: u16 = 10_000;
 
-declare_id!("StraTegy1111111111111111111111111111111111");
+declare_id!("StraTegy11111111111111111111111111111111111");
 
 #[program]
 pub mod strategy {
@@ -15,7 +15,9 @@ pub mod strategy {
     ) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
-        let InitializeStrategyBumps { config: config_bump } = ctx.bumps;
+        let InitializeStrategyBumps {
+            config: config_bump,
+        } = ctx.bumps;
         config.bump = config_bump;
         config.admin = ctx.accounts.admin.key();
         config.guardian = if params.guardian == Pubkey::default() {
@@ -50,15 +52,17 @@ pub mod strategy {
         Ok(())
     }
 
-    pub fn set_targets(
-        ctx: Context<UpdateStrategy>,
-        targets: TargetWeights,
-    ) -> Result<()> {
+    pub fn set_targets(ctx: Context<UpdateStrategy>, targets: TargetWeights) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
         // Validate target weights sum to 10,000 bps (100%)
+        let total_weight = targets
+            .usdc_weight_bps
+            .checked_add(targets.usdt_weight_bps)
+            .ok_or(StrategyError::InvalidTargetWeights)?;
+
         require!(
-            targets.usdc_weight_bps.saturating_add(targets.usdt_weight_bps) == BPS_DENOMINATOR,
+            total_weight == BPS_DENOMINATOR,
             StrategyError::InvalidTargetWeights
         );
 
@@ -83,17 +87,11 @@ pub mod strategy {
         Ok(())
     }
 
-    pub fn set_thresholds(
-        ctx: Context<UpdateStrategy>,
-        threshold: DriftThreshold,
-    ) -> Result<()> {
+    pub fn set_thresholds(ctx: Context<UpdateStrategy>, threshold: DriftThreshold) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
         // Validate threshold is reasonable (0-1000 bps = 0-10%)
-        require!(
-            threshold.bps <= 1_000,
-            StrategyError::InvalidThreshold
-        );
+        require!(threshold.bps <= 1_000, StrategyError::InvalidThreshold);
 
         config.drift_threshold = threshold;
         config.last_updated = Clock::get()?.unix_timestamp;
@@ -138,19 +136,72 @@ pub mod strategy {
         oracle_values: OracleSignals,
     ) -> Result<()> {
         let config = &mut ctx.accounts.config;
+        let current_time = Clock::get()?.unix_timestamp;
+
+        // SECURITY: Oracle manipulation protection
+        const MIN_UPDATE_DELAY: i64 = 300; // 5 minutes minimum between updates
+        const MAX_APY_CHANGE_BPS: i32 = 1000; // Maximum 10% change per update
+
+        // Check minimum delay between oracle updates
+        // SECURITY: Prevent future timestamps from bypassing delay checks
+        let time_since_last_update = current_time
+            .checked_sub(config.last_updated)
+            .ok_or(StrategyError::OracleUpdateTooFrequent)?; // Fail if last_updated > current_time
+        
+        require!(
+            time_since_last_update >= MIN_UPDATE_DELAY,
+            StrategyError::OracleUpdateTooFrequent
+        );
 
         // Validate APY values are reasonable (-50,000 to 50,000 bps = -500% to 500%)
+        // Safe check for i32::abs to avoid overflow on i32::MIN
+        let usdc_apy_abs = if oracle_values.usdc_apy_bps == i32::MIN {
+            50_001 // Clearly exceeds the limit
+        } else {
+            oracle_values.usdc_apy_bps.abs()
+        };
+        let usdt_apy_abs = if oracle_values.usdt_apy_bps == i32::MIN {
+            50_001 // Clearly exceeds the limit
+        } else {
+            oracle_values.usdt_apy_bps.abs()
+        };
+
+        require!(usdc_apy_abs <= 50_000, StrategyError::InvalidApyValue);
+        require!(usdt_apy_abs <= 50_000, StrategyError::InvalidApyValue);
+
+        // SECURITY: Protect against oracle manipulation via extreme price changes
+        let usdc_apy_change = oracle_values
+            .usdc_apy_bps
+            .abs_diff(config.oracle_signals.usdc_apy_bps);
+        let usdt_apy_change = oracle_values
+            .usdt_apy_bps
+            .abs_diff(config.oracle_signals.usdt_apy_bps);
+
         require!(
-            oracle_values.usdc_apy_bps.abs() <= 50_000,
-            StrategyError::InvalidApyValue
+            usdc_apy_change <= MAX_APY_CHANGE_BPS as u32,
+            StrategyError::OraclePriceDeviationTooLarge
         );
         require!(
-            oracle_values.usdt_apy_bps.abs() <= 50_000,
-            StrategyError::InvalidApyValue
+            usdt_apy_change <= MAX_APY_CHANGE_BPS as u32,
+            StrategyError::OraclePriceDeviationTooLarge
         );
 
+        // SECURITY: Additional validation for peg stability signals
+        // If both tokens become unstable simultaneously, it's suspicious
+        let both_unstable = !oracle_values.usdc_peg_stable && !oracle_values.usdt_peg_stable;
+        let previously_both_stable =
+            config.oracle_signals.usdc_peg_stable && config.oracle_signals.usdt_peg_stable;
+
+        if both_unstable && previously_both_stable {
+            // Require longer delay if both tokens suddenly become unstable
+            require!(
+                time_since_last_update >= 1800, // 30 minutes
+                StrategyError::OracleUpdateTooFrequent
+            );
+        }
+
         config.oracle_signals = oracle_values;
-        config.last_updated = Clock::get()?.unix_timestamp;
+        config.last_updated = current_time;
 
         emit!(OracleUpdatedEvent {
             usdc_apy_bps: oracle_values.usdc_apy_bps,
@@ -168,24 +219,24 @@ pub struct InitializeStrategyParams {
     pub guardian: Pubkey,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct TargetWeights {
     pub usdc_weight_bps: u16,
     pub usdt_weight_bps: u16,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct DriftThreshold {
     pub bps: u16,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct WeightCaps {
     pub usdc_cap_bps: u16,
     pub usdt_cap_bps: u16,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct OracleSignals {
     pub usdc_apy_bps: i32,
     pub usdt_apy_bps: i32,
@@ -206,7 +257,7 @@ pub struct StrategyConfig {
 }
 
 impl StrategyConfig {
-    pub const SPACE: usize = 8 + 1 + (2 * 32) + 4 + 2 + 2 + 2 + 2 + 2 + 2 + 4 + 1 + 1 + 8;
+    pub const SPACE: usize = 8 + 1 + (2 * 32) + 8 + 8 + 8 + 2 + 2 + 2 + 2 + 4 + 1 + 1 + 8;
 }
 
 #[derive(Accounts)]
@@ -282,4 +333,8 @@ pub enum StrategyError {
     InvalidCaps,
     #[msg("APY values must be between -50,000 and 50,000 bps (-500% to 500%)")]
     InvalidApyValue,
+    #[msg("Oracle update too frequent - minimum delay required")]
+    OracleUpdateTooFrequent,
+    #[msg("Oracle price deviation too large - possible manipulation")]
+    OraclePriceDeviationTooLarge,
 }

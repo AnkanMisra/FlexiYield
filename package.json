@@ -1,4 +1,53 @@
 {
   "name": "flexiyield",
-  "packageManager": "pnpm@10.14.0"
+  "version": "0.1.0",
+  "description": "FlexiYield MVP - 5-day Solana devnet basket token rebalancing protocol",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "pnpm --filter app dev",
+    "build": "pnpm --filter app build",
+    "start": "pnpm --filter app start",
+    "lint": "pnpm --filter app lint",
+    "test": "pnpm --filter app test",
+    "anchor:build": "anchor build",
+    "anchor:deploy": "anchor deploy",
+    "scripts:airdrop": "pnpm --filter scripts run airdrop",
+    "scripts:mints": "pnpm --filter scripts run create-mints",
+    "scripts:seed": "pnpm --filter scripts run seed-balances",
+    "scripts:deploy": "pnpm --filter scripts run deploy",
+    "scripts:demo": "pnpm --filter scripts run demo",
+    "scripts:demo:setup": "pnpm --filter scripts run demo:setup",
+    "scripts:demo:status": "pnpm --filter scripts run demo:status",
+    "scripts:setup": "pnpm --filter scripts run setup",
+    "setup:mvp": "pnpm scripts:airdrop && pnpm scripts:mints && pnpm scripts:seed && pnpm scripts:deploy",
+    "clean": "anchor clean && rm -rf app/src/idl/*"
+  },
+  "workspaces": [
+    "app",
+    "programs/*",
+    "scripts"
+  ],
+  "devDependencies": {
+    "@coral-xyz/anchor-cli": "^0.31.2",
+    "@types/node": "^20.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "keywords": [
+    "solana",
+    "defi",
+    "basket-token",
+    "rebalancing",
+    "mvp",
+    "devnet"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/flexiyield.git"
+  },
+  "author": "FlexiYield Team",
+  "license": "MIT",
+  "homepage": "https://flexiyield.dev"
 }

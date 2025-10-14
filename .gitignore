@@ -1,6 +1,12 @@
 # Rust/Anchor build artifacts (workspace level)
 target/
 Cargo.lock
+node_modules/
+
+# Package manager lock files
+# pnpm-lock.yaml
+# yarn.lock
+# package-lock.json
 
 # Environment variables (workspace level)
 .env
@@ -41,4 +47,24 @@ test-ledger/
 # Nixpacks (workspace level)
 .nixpacks/
 
+# Security sensitive files
+**/wallet-keypair.json
+**/*.keypair
+**/private-key*
+**/secret*
+**/*.pem
 
+# Scripts generated files
+scripts/*.json
+scripts/wallet-keypair.json
+scripts/demo-vault.json
+scripts/addresses.json
+
+# Build artifacts in scripts
+scripts/dist/
+scripts/build/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
