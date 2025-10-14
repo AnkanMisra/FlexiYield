@@ -10,7 +10,7 @@ pub const USDT_MINT: Pubkey = pubkey!("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8Benw
 const REBALANCE_CONFIG_SEED: &[u8] = b"rebalance-config";
 const VAULT_AUTHORITY_SEED: &[u8] = b"vault-authority";
 const VAULT_SEED: &[u8] = b"vault";
-const BPS_DENOMINATOR: u16 = 10_000;
+
 
 #[program]
 pub mod rebalance {

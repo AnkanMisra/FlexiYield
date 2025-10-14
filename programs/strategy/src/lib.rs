@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 const STRATEGY_CONFIG_SEED: &[u8] = b"strategy-config";
 const BPS_DENOMINATOR: u16 = 10_000;
 
-declare_id!("StraTegy11111111111111111111111111111111111112");
+declare_id!("StraTegy11111111111111111111111111111111111");
 
 #[program]
 pub mod strategy {
@@ -143,7 +143,11 @@ pub mod strategy {
         const MAX_APY_CHANGE_BPS: i32 = 1000; // Maximum 10% change per update
 
         // Check minimum delay between oracle updates
-        let time_since_last_update = current_time.saturating_sub(config.last_updated);
+        // SECURITY: Prevent future timestamps from bypassing delay checks
+        let time_since_last_update = current_time
+            .checked_sub(config.last_updated)
+            .ok_or(StrategyError::OracleUpdateTooFrequent)?; // Fail if last_updated > current_time
+        
         require!(
             time_since_last_update >= MIN_UPDATE_DELAY,
             StrategyError::OracleUpdateTooFrequent
@@ -174,11 +178,11 @@ pub mod strategy {
             .abs_diff(config.oracle_signals.usdt_apy_bps);
 
         require!(
-            usdc_apy_change <= MAX_APY_CHANGE_BPS,
+            usdc_apy_change <= MAX_APY_CHANGE_BPS as u32,
             StrategyError::OraclePriceDeviationTooLarge
         );
         require!(
-            usdt_apy_change <= MAX_APY_CHANGE_BPS,
+            usdt_apy_change <= MAX_APY_CHANGE_BPS as u32,
             StrategyError::OraclePriceDeviationTooLarge
         );
 

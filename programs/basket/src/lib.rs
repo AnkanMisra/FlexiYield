@@ -142,16 +142,21 @@ pub mod basket {
         let flex_supply_before = ctx.accounts.flex_mint.supply as u128;
         let total_assets_before = total_assets(&ctx.accounts.usdc_vault, &ctx.accounts.usdt_vault)?;
 
+        // SECURITY: Additional per-transaction limit to prevent abuse (applies to all deposits)
+        require!(
+            params.amount <= MAX_SINGLE_DEPOSIT,
+            BasketError::SingleDepositTooLarge
+        );
+
         let flex_to_mint = if flex_supply_before == 0 {
+            // SECURITY: Slippage protection for first deposit
+            require!(
+                params.amount >= params.min_flex_out,
+                BasketError::SlippageExceeded
+            );
             params.amount
         } else {
             require!(total_assets_before > 0, BasketError::ZeroTotalAssets);
-
-            // SECURITY: Additional per-transaction limit to prevent abuse
-            require!(
-                params.amount <= MAX_SINGLE_DEPOSIT,
-                BasketError::SingleDepositTooLarge
-            );
 
             // SECURITY: Enhanced slippage protection with price impact checks
             let current_price = if flex_supply_before > 0 {
@@ -465,8 +470,14 @@ impl BasketConfig {
         // This ensures the check and update happen together without interruption
 
         if self.last_deposit_day != current_day {
-            // New day - reset daily volume atomically
-            self.daily_deposit_volume = amount; // Set directly to current amount
+            // New day - check amount against daily limit before resetting
+            require!(
+                amount <= self.max_daily_deposit,
+                BasketError::DailyDepositLimitExceeded
+            );
+            
+            // Reset daily volume atomically
+            self.daily_deposit_volume = amount;
             self.last_deposit_day = current_day;
         } else {
             // Same day - check and update atomically
