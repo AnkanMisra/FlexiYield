@@ -2,8 +2,8 @@
   "name": "@flexiyield/shared",
   "version": "1.0.0",
   "description": "Shared utilities for FlexiYield project",
-  "main": "lib/index.ts",
-  "types": "lib/index.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch"
@@ -17,6 +17,6 @@
     "typescript": "^5.9.3"
   },
   "exports": {
-    ".": "./lib/index.ts"
+    ".": "./lib/index.js"
   }
 }
