@@ -1,0 +1,44 @@
+# Rust/Anchor build artifacts (workspace level)
+target/
+Cargo.lock
+
+# Environment variables (workspace level)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editor files (workspace level)
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files (workspace level)
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs (workspace level)
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Solana/Anchor specific (workspace level)
+.anchor/
+test-ledger/
+*.so
+*.a
+*.rlib
+
+# Nixpacks (workspace level)
+.nixpacks/
+
+
