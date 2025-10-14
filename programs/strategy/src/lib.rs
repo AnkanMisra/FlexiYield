@@ -136,6 +136,18 @@ pub mod strategy {
         oracle_values: OracleSignals,
     ) -> Result<()> {
         let config = &mut ctx.accounts.config;
+        let current_time = Clock::get()?.unix_timestamp;
+
+        // SECURITY: Oracle manipulation protection
+        const MIN_UPDATE_DELAY: i64 = 300; // 5 minutes minimum between updates
+        const MAX_APY_CHANGE_BPS: i32 = 1000; // Maximum 10% change per update
+
+        // Check minimum delay between oracle updates
+        let time_since_last_update = current_time.saturating_sub(config.last_updated);
+        require!(
+            time_since_last_update >= MIN_UPDATE_DELAY,
+            StrategyError::OracleUpdateTooFrequent
+        );
 
         // Validate APY values are reasonable (-50,000 to 50,000 bps = -500% to 500%)
         // Safe check for i32::abs to avoid overflow on i32::MIN
@@ -153,8 +165,39 @@ pub mod strategy {
         require!(usdc_apy_abs <= 50_000, StrategyError::InvalidApyValue);
         require!(usdt_apy_abs <= 50_000, StrategyError::InvalidApyValue);
 
+        // SECURITY: Protect against oracle manipulation via extreme price changes
+        let usdc_apy_change = oracle_values
+            .usdc_apy_bps
+            .abs_diff(config.oracle_signals.usdc_apy_bps);
+        let usdt_apy_change = oracle_values
+            .usdt_apy_bps
+            .abs_diff(config.oracle_signals.usdt_apy_bps);
+
+        require!(
+            usdc_apy_change <= MAX_APY_CHANGE_BPS,
+            StrategyError::OraclePriceDeviationTooLarge
+        );
+        require!(
+            usdt_apy_change <= MAX_APY_CHANGE_BPS,
+            StrategyError::OraclePriceDeviationTooLarge
+        );
+
+        // SECURITY: Additional validation for peg stability signals
+        // If both tokens become unstable simultaneously, it's suspicious
+        let both_unstable = !oracle_values.usdc_peg_stable && !oracle_values.usdt_peg_stable;
+        let previously_both_stable =
+            config.oracle_signals.usdc_peg_stable && config.oracle_signals.usdt_peg_stable;
+
+        if both_unstable && previously_both_stable {
+            // Require longer delay if both tokens suddenly become unstable
+            require!(
+                time_since_last_update >= 1800, // 30 minutes
+                StrategyError::OracleUpdateTooFrequent
+            );
+        }
+
         config.oracle_signals = oracle_values;
-        config.last_updated = Clock::get()?.unix_timestamp;
+        config.last_updated = current_time;
 
         emit!(OracleUpdatedEvent {
             usdc_apy_bps: oracle_values.usdc_apy_bps,
@@ -286,4 +329,8 @@ pub enum StrategyError {
     InvalidCaps,
     #[msg("APY values must be between -50,000 and 50,000 bps (-500% to 500%)")]
     InvalidApyValue,
+    #[msg("Oracle update too frequent - minimum delay required")]
+    OracleUpdateTooFrequent,
+    #[msg("Oracle price deviation too large - possible manipulation")]
+    OraclePriceDeviationTooLarge,
 }

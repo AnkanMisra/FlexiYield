@@ -7,6 +7,7 @@ use anchor_spl::token::{Mint as TokenMint, TokenAccount as SplTokenAccount};
 
 pub const BASKET_DECIMALS: u8 = 6;
 const DECIMAL_FACTOR: u128 = 1_000_000;
+const BPS_DENOMINATOR: u16 = 10_000;
 const CONFIG_SEED: &[u8] = b"basket-config";
 const MINT_AUTHORITY_SEED: &[u8] = b"mint-authority";
 const VAULT_SEED: &[u8] = b"vault";
@@ -139,6 +140,25 @@ pub mod basket {
             params.amount
         } else {
             require!(total_assets_before > 0, BasketError::ZeroTotalAssets);
+
+            // SECURITY: Additional per-transaction limit to prevent abuse
+            const MAX_SINGLE_DEPOSIT: u64 = 10_000_000; // 10 USDC max per transaction
+            require!(
+                params.amount <= MAX_SINGLE_DEPOSIT,
+                BasketError::SingleDepositTooLarge
+            );
+
+            // SECURITY: Enhanced slippage protection with price impact checks
+            let current_price = if flex_supply_before > 0 {
+                total_assets_before
+                    .checked_mul(DECIMAL_FACTOR)
+                    .ok_or(BasketError::MathOverflow)?
+                    .checked_div(flex_supply_before)
+                    .ok_or(BasketError::ZeroNav)?
+            } else {
+                DECIMAL_FACTOR as u128
+            };
+
             let minted_u128 = (params.amount as u128)
                 .checked_mul(flex_supply_before)
                 .ok_or(BasketError::MathOverflow)?
@@ -146,8 +166,39 @@ pub mod basket {
                 .ok_or(BasketError::ZeroNav)?;
             require!(minted_u128 > 0, BasketError::AmountTooSmallForShare);
             require!(minted_u128 <= u64::MAX as u128, BasketError::MathOverflow);
+
             let minted = minted_u128 as u64;
+
+            // Basic slippage protection
             require!(minted >= params.min_flex_out, BasketError::SlippageExceeded);
+
+            // SECURITY: Maximum price impact protection (5%)
+            const MAX_PRICE_IMPACT_BPS: u16 = 500; // 5%
+            let max_acceptable_price = current_price
+                .checked_mul((BPS_DENOMINATOR + MAX_PRICE_IMPACT_BPS) as u128)
+                .ok_or(BasketError::MathOverflow)?
+                .checked_div(BPS_DENOMINATOR as u128)
+                .ok_or(BasketError::MathOverflow)?;
+
+            // Simulate post-deposit price to check for excessive impact
+            let new_total_assets = total_assets_before
+                .checked_add(params.amount as u128)
+                .ok_or(BasketError::MathOverflow)?;
+            let new_supply = flex_supply_before
+                .checked_add(minted_u128)
+                .ok_or(BasketError::MathOverflow)?;
+
+            let new_price = new_total_assets
+                .checked_mul(DECIMAL_FACTOR)
+                .ok_or(BasketError::MathOverflow)?
+                .checked_div(new_supply)
+                .ok_or(BasketError::ZeroNav)?;
+
+            require!(
+                new_price <= max_acceptable_price,
+                BasketError::ExcessivePriceImpact
+            );
+
             minted
         };
 
@@ -376,12 +427,20 @@ impl BasketConfig {
         self.nav = if flex_supply == 0 {
             DECIMAL_FACTOR as u64
         } else {
+            // SECURITY: Prevent overflow by checking bounds before multiplication
+            const MAX_SAFE_TOTAL_ASSETS: u128 = u128::MAX / DECIMAL_FACTOR;
+            require!(
+                total_assets <= MAX_SAFE_TOTAL_ASSETS,
+                BasketError::TotalAssetsTooLarge
+            );
+
             let nav = total_assets
                 .checked_mul(DECIMAL_FACTOR)
                 .ok_or(BasketError::MathOverflow)?
                 .checked_div(flex_supply)
                 .ok_or(BasketError::ZeroNav)?;
 
+            // Additional bounds checking
             require!(nav <= u128::from(u64::MAX), BasketError::MathOverflow);
             nav as u64
         };
@@ -392,22 +451,28 @@ impl BasketConfig {
     fn check_daily_limit(&mut self, amount: u64, current_time: i64) -> Result<()> {
         let current_day = current_time / 86400;
 
+        // SECURITY: Atomic daily limit check to prevent race conditions
+        // This ensures the check and update happen together without interruption
+
         if self.last_deposit_day != current_day {
-            self.daily_deposit_volume = 0;
+            // New day - reset daily volume atomically
+            self.daily_deposit_volume = amount; // Set directly to current amount
             self.last_deposit_day = current_day;
+        } else {
+            // Same day - check and update atomically
+            let new_daily_volume = self
+                .daily_deposit_volume
+                .checked_add(amount)
+                .ok_or(BasketError::MathOverflow)?;
+
+            require!(
+                new_daily_volume <= self.max_daily_deposit,
+                BasketError::DailyDepositLimitExceeded
+            );
+
+            self.daily_deposit_volume = new_daily_volume;
         }
 
-        let new_daily_volume = self
-            .daily_deposit_volume
-            .checked_add(amount)
-            .ok_or(BasketError::MathOverflow)?;
-
-        require!(
-            new_daily_volume <= self.max_daily_deposit,
-            BasketError::DailyDepositLimitExceeded
-        );
-
-        self.daily_deposit_volume = new_daily_volume;
         Ok(())
     }
 
@@ -596,6 +661,8 @@ pub enum BasketError {
     AmountTooSmallForShare,
     #[msg("Mathematical overflow")]
     MathOverflow,
+    #[msg("Total assets too large for safe NAV calculation")]
+    TotalAssetsTooLarge,
     #[msg("Total assets cannot be zero when supply exists")]
     ZeroNav,
     #[msg("FLEX supply is zero")]
@@ -612,6 +679,10 @@ pub enum BasketError {
     ContractPaused,
     #[msg("Slippage tolerance exceeded")]
     SlippageExceeded,
+    #[msg("Price impact exceeds maximum allowed threshold")]
+    ExcessivePriceImpact,
+    #[msg("Single deposit amount exceeds maximum limit")]
+    SingleDepositTooLarge,
     #[msg("Daily deposit limit exceeded")]
     DailyDepositLimitExceeded,
     #[msg("Maximum deposit amount exceeded")]

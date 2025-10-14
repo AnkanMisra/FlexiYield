@@ -1,6 +1,11 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{Token, TokenAccount};
 
 declare_id!("RebaLance1111111111111111111111111111111111");
+
+// Token mint addresses (these should match your actual token mints)
+pub const USDC_MINT: Pubkey = pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // devnet USDC
+pub const USDT_MINT: Pubkey = pubkey!("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"); // devnet USDT
 
 const REBALANCE_CONFIG_SEED: &[u8] = b"rebalance-config";
 const BPS_DENOMINATOR: u16 = 10_000;
@@ -44,10 +49,9 @@ pub mod rebalance {
 
         let current_time = Clock::get()?.unix_timestamp;
 
-        // For MVP, use simulated balances since we're using UncheckedAccount
-        // In production, this would read from actual token accounts
-        let usdc_balance: u64 = 1_000_000; // 1 USDC
-        let usdt_balance: u64 = 1_000_000; // 1 USDT
+        // SECURE: Read actual balances from validated token vaults
+        let usdc_balance: u64 = ctx.accounts.usdc_vault.amount;
+        let usdt_balance: u64 = ctx.accounts.usdt_vault.amount;
         let total_balance = usdc_balance
             .checked_add(usdt_balance)
             .ok_or(RebalanceError::MathOverflow)?;
@@ -175,7 +179,7 @@ pub struct RebalanceConfig {
 }
 
 impl RebalanceConfig {
-    pub const SPACE: usize = 8 + 1 + (2 * 32) + 1 + 8 + 8; // 82 bytes
+    pub const SPACE: usize = 8 + 1 + (2 * 32) + 1 + 8 + 8; // 90 bytes
 }
 
 #[derive(Accounts)]
@@ -207,11 +211,19 @@ pub struct ExecuteRebalance<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    // Token vaults (for reading balances only in MVP)
-    /// CHECK: Read-only account for balance checking
-    pub usdc_vault: UncheckedAccount<'info>,
-    /// CHECK: Read-only account for balance checking
-    pub usdt_vault: UncheckedAccount<'info>,
+    // Token vaults with proper validation
+    #[account(
+        constraint = usdc_vault.owner == config.admin,
+        constraint = usdc_vault.mint == USDC_MINT,
+    )]
+    pub usdc_vault: Account<'info, TokenAccount>,
+    #[account(
+        constraint = usdt_vault.owner == config.admin,
+        constraint = usdt_vault.mint == USDT_MINT,
+    )]
+    pub usdt_vault: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
