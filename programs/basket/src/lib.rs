@@ -198,9 +198,6 @@ pub mod basket {
             BasketError::InsufficientUserFunds
         );
 
-        let config = &ctx.accounts.config;
-        require!(!config.is_paused(), BasketError::ContractPaused);
-
         let current_time = Clock::get()?.unix_timestamp;
         let flex_supply_before = ctx.accounts.flex_mint.supply as u128;
         require!(flex_supply_before > 0, BasketError::ZeroSupply);
@@ -212,7 +209,9 @@ pub mod basket {
             .checked_mul(total_assets_before)
             .ok_or(BasketError::MathOverflow)?
             .checked_div(flex_supply_before)
-            .ok_or(BasketError::ZeroNav)? as u64;
+            .ok_or(BasketError::ZeroNav)?
+            .try_into()
+            .map_err(|_| BasketError::MathOverflow)?;
 
         require!(usdc_to_return > 0, BasketError::AmountTooSmallForShare);
         require!(
@@ -234,6 +233,16 @@ pub mod basket {
         );
         token::burn(burn_ctx, params.amount)?;
 
+        let total_assets_after = total_assets_before
+            .checked_sub(usdc_to_return as u128)
+            .ok_or(BasketError::MathOverflow)?;
+        let flex_supply_after = flex_supply_before
+            .checked_sub(params.amount as u128)
+            .ok_or(BasketError::MathOverflow)?;
+
+        let config = &mut ctx.accounts.config;
+        require!(!config.is_paused(), BasketError::ContractPaused);
+
         let mint_authority_bump = [config.mint_authority_bump];
         let signer_seeds: &[&[&[u8]]] = &[&[MINT_AUTHORITY_SEED, &mint_authority_bump]];
         let transfer_ctx = CpiContext::new_with_signer(
@@ -247,21 +256,14 @@ pub mod basket {
         );
         token::transfer(transfer_ctx, usdc_to_return)?;
 
-        let total_assets_after = total_assets_before
-            .checked_sub(usdc_to_return as u128)
-            .ok_or(BasketError::MathOverflow)?;
-        let flex_supply_after = flex_supply_before
-            .checked_sub(params.amount as u128)
-            .ok_or(BasketError::MathOverflow)?;
-
-        let config_mut = &mut ctx.accounts.config;
-        config_mut.update_nav(total_assets_after, flex_supply_after)?;
+        config.update_nav(total_assets_after, flex_supply_after)?;
+        let nav_for_event = config.nav;
 
         emit!(RedeemEvent {
             redeemer: ctx.accounts.user.key(),
             flex_burned: params.amount,
             usdc_returned: usdc_to_return,
-            nav: config.nav,
+            nav: nav_for_event,
             timestamp: current_time,
         });
 
