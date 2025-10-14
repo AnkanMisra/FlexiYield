@@ -1,10 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program_option::COption;
-use anchor_spl::token_2022::{
-    self, spl_token_2022::instruction::AuthorityType, Burn, MintTo, SetAuthority, Token2022,
-    TransferChecked,
+use anchor_spl::token::{
+    self, spl_token::instruction::AuthorityType, Burn, MintTo, SetAuthority, Token, Transfer,
 };
-use anchor_spl::token_interface::{Mint, TokenAccount};
+use anchor_spl::token::{Mint as TokenMint, TokenAccount as SplTokenAccount};
 
 pub const BASKET_DECIMALS: u8 = 6;
 const DECIMAL_FACTOR: u128 = 1_000_000;
@@ -46,7 +45,7 @@ pub mod basket {
         let admin_info = ctx.accounts.admin.to_account_info();
         let flex_mint_info = ctx.accounts.flex_mint.to_account_info();
 
-        token_2022::set_authority(
+        token::set_authority(
             CpiContext::new(
                 token_program.clone(),
                 SetAuthority {
@@ -58,7 +57,7 @@ pub mod basket {
             Some(ctx.accounts.mint_authority.key()),
         )?;
 
-        token_2022::set_authority(
+        token::set_authority(
             CpiContext::new(
                 token_program,
                 SetAuthority {
@@ -76,6 +75,11 @@ pub mod basket {
             params.guardian
         };
 
+        require!(
+            params.max_deposit_amount > 0 && params.max_daily_deposit > 0,
+            BasketError::InvalidLimits
+        );
+
         let InitializeBasketBumps {
             config: config_bump,
             mint_authority: mint_authority_bump,
@@ -89,6 +93,7 @@ pub mod basket {
         config.usdt_vault_bump = usdt_vault_bump;
         config.admin = ctx.accounts.admin.key();
         config.guardian = guardian;
+        config.emergency_admin = params.emergency_admin;
         config.flex_mint = ctx.accounts.flex_mint.key();
         config.usdc_mint = ctx.accounts.usdc_mint.key();
         config.usdt_mint = ctx.accounts.usdt_mint.key();
@@ -97,50 +102,62 @@ pub mod basket {
         config.nav = DECIMAL_FACTOR as u64;
         config.flex_supply_snapshot = 0;
         config.last_total_assets = 0;
+        config.paused = false;
+        config.max_deposit_amount = params.max_deposit_amount;
+        config.max_daily_deposit = params.max_daily_deposit;
+        config.daily_deposit_volume = 0;
+        config.last_deposit_day = 0;
 
         emit!(ConfigInitializedEvent {
             admin: config.admin,
             guardian: config.guardian,
+            emergency_admin: config.emergency_admin,
             flex_mint: config.flex_mint,
+            timestamp: Clock::get()?.unix_timestamp,
         });
 
         Ok(())
     }
 
-    pub fn deposit_usdc(ctx: Context<DepositUsdc>, amount: u64) -> Result<()> {
-        require!(amount > 0, BasketError::AmountMustBePositive);
+    pub fn deposit_usdc(ctx: Context<DepositUsdc>, params: DepositUsdcParams) -> Result<()> {
+        require!(params.amount > 0, BasketError::AmountMustBePositive);
         require!(
-            ctx.accounts.user_usdc.amount >= amount,
+            ctx.accounts.user_usdc.amount >= params.amount,
             BasketError::InsufficientUserFunds
         );
 
         let config = &mut ctx.accounts.config;
+        config.can_deposit(params.amount)?;
+
+        let current_time = Clock::get()?.unix_timestamp;
+        config.check_daily_limit(params.amount, current_time)?;
+
         let flex_supply_before = ctx.accounts.flex_mint.supply as u128;
         let total_assets_before = total_assets(&ctx.accounts.usdc_vault, &ctx.accounts.usdt_vault)?;
 
         let flex_to_mint = if flex_supply_before == 0 {
-            amount
+            params.amount
         } else {
             require!(total_assets_before > 0, BasketError::ZeroTotalAssets);
-            let minted = (amount as u128)
+            let minted = (params.amount as u128)
                 .checked_mul(flex_supply_before)
                 .ok_or(BasketError::MathOverflow)?
                 .checked_div(total_assets_before)
                 .ok_or(BasketError::ZeroNav)?;
             require!(minted > 0, BasketError::AmountTooSmallForShare);
+            require!(minted as u64 >= params.min_flex_out, BasketError::SlippageExceeded);
             minted as u64
         };
 
         let transfer_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
-            TransferChecked {
+            Transfer {
                 from: ctx.accounts.user_usdc.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
                 to: ctx.accounts.usdc_vault.to_account_info(),
                 authority: ctx.accounts.user.to_account_info(),
             },
         );
-        token_2022::transfer_checked(transfer_ctx, amount, BASKET_DECIMALS)?;
+        token::transfer(transfer_ctx, params.amount)?;
 
         let mint_authority_bump = [config.mint_authority_bump];
         let signer_seeds: &[&[&[u8]]] = &[&[MINT_AUTHORITY_SEED, &mint_authority_bump]];
@@ -153,10 +170,10 @@ pub mod basket {
             },
             signer_seeds,
         );
-        token_2022::mint_to(mint_ctx, flex_to_mint)?;
+        token::mint_to(mint_ctx, flex_to_mint)?;
 
         let total_assets_after = total_assets_before
-            .checked_add(amount as u128)
+            .checked_add(params.amount as u128)
             .ok_or(BasketError::MathOverflow)?;
         let flex_supply_after = flex_supply_before
             .checked_add(flex_to_mint as u128)
@@ -165,35 +182,43 @@ pub mod basket {
 
         emit!(DepositEvent {
             depositor: ctx.accounts.user.key(),
-            usdc_amount: amount,
+            usdc_amount: params.amount,
             flex_minted: flex_to_mint,
             nav: config.nav,
+            timestamp: current_time,
         });
 
         Ok(())
     }
 
-    pub fn redeem_flex(ctx: Context<RedeemFlex>, amount: u64) -> Result<()> {
-        require!(amount > 0, BasketError::AmountMustBePositive);
+    pub fn redeem_flex(ctx: Context<RedeemFlex>, params: RedeemFlexParams) -> Result<()> {
+        require!(params.amount > 0, BasketError::AmountMustBePositive);
         require!(
-            ctx.accounts.user_flex.amount >= amount,
+            ctx.accounts.user_flex.amount >= params.amount,
             BasketError::InsufficientUserFunds
         );
 
-        let config = &mut ctx.accounts.config;
+        let config = &ctx.accounts.config;
+        require!(!config.is_paused(), BasketError::ContractPaused);
+
+        let current_time = Clock::get()?.unix_timestamp;
         let flex_supply_before = ctx.accounts.flex_mint.supply as u128;
         require!(flex_supply_before > 0, BasketError::ZeroSupply);
 
         let total_assets_before = total_assets(&ctx.accounts.usdc_vault, &ctx.accounts.usdt_vault)?;
         require!(total_assets_before > 0, BasketError::ZeroTotalAssets);
 
-        let usdc_to_return = (amount as u128)
+        let usdc_to_return = (params.amount as u128)
             .checked_mul(total_assets_before)
             .ok_or(BasketError::MathOverflow)?
             .checked_div(flex_supply_before)
             .ok_or(BasketError::ZeroNav)? as u64;
 
         require!(usdc_to_return > 0, BasketError::AmountTooSmallForShare);
+        require!(
+            usdc_to_return >= params.min_usdc_out,
+            BasketError::SlippageExceeded
+        );
         require!(
             ctx.accounts.usdc_vault.amount >= usdc_to_return,
             BasketError::InsufficientVaultLiquidity
@@ -207,35 +232,37 @@ pub mod basket {
                 authority: ctx.accounts.user.to_account_info(),
             },
         );
-        token_2022::burn(burn_ctx, amount)?;
+        token::burn(burn_ctx, params.amount)?;
 
         let mint_authority_bump = [config.mint_authority_bump];
         let signer_seeds: &[&[&[u8]]] = &[&[MINT_AUTHORITY_SEED, &mint_authority_bump]];
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
-            TransferChecked {
+            Transfer {
                 from: ctx.accounts.usdc_vault.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
                 to: ctx.accounts.user_usdc.to_account_info(),
                 authority: ctx.accounts.mint_authority.to_account_info(),
             },
             signer_seeds,
         );
-        token_2022::transfer_checked(transfer_ctx, usdc_to_return, BASKET_DECIMALS)?;
+        token::transfer(transfer_ctx, usdc_to_return)?;
 
         let total_assets_after = total_assets_before
             .checked_sub(usdc_to_return as u128)
             .ok_or(BasketError::MathOverflow)?;
         let flex_supply_after = flex_supply_before
-            .checked_sub(amount as u128)
+            .checked_sub(params.amount as u128)
             .ok_or(BasketError::MathOverflow)?;
-        config.update_nav(total_assets_after, flex_supply_after)?;
+
+        let config_mut = &mut ctx.accounts.config;
+        config_mut.update_nav(total_assets_after, flex_supply_after)?;
 
         emit!(RedeemEvent {
             redeemer: ctx.accounts.user.key(),
-            flex_burned: amount,
+            flex_burned: params.amount,
             usdc_returned: usdc_to_return,
             nav: config.nav,
+            timestamp: current_time,
         });
 
         Ok(())
@@ -250,10 +277,27 @@ pub mod basket {
         if let Some(new_guardian) = params.new_guardian {
             config.guardian = new_guardian;
         }
+        if let Some(new_emergency_admin) = params.new_emergency_admin {
+            config.emergency_admin = new_emergency_admin;
+        }
+        if let Some(paused) = params.paused {
+            config.paused = paused;
+        }
+        if let Some(max_deposit_amount) = params.max_deposit_amount {
+            require!(max_deposit_amount > 0, BasketError::InvalidLimits);
+            config.max_deposit_amount = max_deposit_amount;
+        }
+        if let Some(max_daily_deposit) = params.max_daily_deposit {
+            require!(max_daily_deposit > 0, BasketError::InvalidLimits);
+            config.max_daily_deposit = max_daily_deposit;
+        }
 
         emit!(ConfigUpdatedEvent {
             admin: config.admin,
             guardian: config.guardian,
+            emergency_admin: config.emergency_admin,
+            paused: config.paused,
+            timestamp: Clock::get()?.unix_timestamp,
         });
 
         Ok(())
@@ -263,12 +307,31 @@ pub mod basket {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct InitializeBasketParams {
     pub guardian: Pubkey,
+    pub emergency_admin: Pubkey,
+    pub max_deposit_amount: u64,
+    pub max_daily_deposit: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct UpdateConfigParams {
     pub new_admin: Option<Pubkey>,
     pub new_guardian: Option<Pubkey>,
+    pub new_emergency_admin: Option<Pubkey>,
+    pub paused: Option<bool>,
+    pub max_deposit_amount: Option<u64>,
+    pub max_daily_deposit: Option<u64>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct DepositUsdcParams {
+    pub amount: u64,
+    pub min_flex_out: u64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct RedeemFlexParams {
+    pub amount: u64,
+    pub min_usdc_out: u64,
 }
 
 #[account]
@@ -279,6 +342,7 @@ pub struct BasketConfig {
     pub usdt_vault_bump: u8,
     pub admin: Pubkey,
     pub guardian: Pubkey,
+    pub emergency_admin: Pubkey,
     pub flex_mint: Pubkey,
     pub usdc_mint: Pubkey,
     pub usdt_mint: Pubkey,
@@ -287,10 +351,15 @@ pub struct BasketConfig {
     pub nav: u64,
     pub flex_supply_snapshot: u64,
     pub last_total_assets: u64,
+    pub paused: bool,
+    pub max_deposit_amount: u64,
+    pub max_daily_deposit: u64,
+    pub daily_deposit_volume: u64,
+    pub last_deposit_day: i64,
 }
 
 impl BasketConfig {
-    pub const SPACE: usize = 8 + 4 + (7 * 32) + 8 + 8 + 8;
+    pub const SPACE: usize = 8 + 4 + (8 * 32) + (8 * 8) + 1 + 4;
 
     fn update_nav(&mut self, total_assets: u128, flex_supply: u128) -> Result<()> {
         require!(total_assets <= u64::MAX as u128, BasketError::MathOverflow);
@@ -312,11 +381,45 @@ impl BasketConfig {
 
         Ok(())
     }
+
+    fn check_daily_limit(&mut self, amount: u64, current_time: i64) -> Result<()> {
+        let current_day = current_time / 86400;
+
+        if self.last_deposit_day != current_day {
+            self.daily_deposit_volume = 0;
+            self.last_deposit_day = current_day;
+        }
+
+        let new_daily_volume = self.daily_deposit_volume
+            .checked_add(amount)
+            .ok_or(BasketError::MathOverflow)?;
+
+        require!(
+            new_daily_volume <= self.max_daily_deposit,
+            BasketError::DailyDepositLimitExceeded
+        );
+
+        self.daily_deposit_volume = new_daily_volume;
+        Ok(())
+    }
+
+    fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    fn can_deposit(&self, amount: u64) -> Result<()> {
+        require!(!self.is_paused(), BasketError::ContractPaused);
+        require!(
+            amount <= self.max_deposit_amount,
+            BasketError::MaxDepositAmountExceeded
+        );
+        Ok(())
+    }
 }
 
 fn total_assets(
-    usdc_vault: &InterfaceAccount<TokenAccount>,
-    usdt_vault: &InterfaceAccount<TokenAccount>,
+    usdc_vault: &SplTokenAccount,
+    usdt_vault: &SplTokenAccount,
 ) -> Result<u128> {
     let total = (usdc_vault.amount as u128)
         .checked_add(usdt_vault.amount as u128)
@@ -342,9 +445,9 @@ pub struct InitializeBasket<'info> {
     #[account(seeds = [MINT_AUTHORITY_SEED], bump)]
     pub mint_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    pub flex_mint: InterfaceAccount<'info, Mint>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
-    pub usdt_mint: InterfaceAccount<'info, Mint>,
+    pub flex_mint: Account<'info, TokenMint>,
+    pub usdc_mint: Account<'info, TokenMint>,
+    pub usdt_mint: Account<'info, TokenMint>,
     #[account(
         init,
         payer = payer,
@@ -353,7 +456,7 @@ pub struct InitializeBasket<'info> {
         token::mint = usdc_mint,
         token::authority = mint_authority
     )]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Account<'info, SplTokenAccount>,
     #[account(
         init,
         payer = payer,
@@ -362,8 +465,8 @@ pub struct InitializeBasket<'info> {
         token::mint = usdt_mint,
         token::authority = mint_authority
     )]
-    pub usdt_vault: InterfaceAccount<'info, TokenAccount>,
-    pub token_program: Program<'info, Token2022>,
+    pub usdt_vault: Account<'info, SplTokenAccount>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }
@@ -379,25 +482,25 @@ pub struct DepositUsdc<'info> {
         constraint = user_usdc.owner == user.key(),
         constraint = user_usdc.mint == config.usdc_mint
     )]
-    pub user_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub user_usdc: Account<'info, SplTokenAccount>,
     #[account(
         mut,
         constraint = user_flex.owner == user.key(),
         constraint = user_flex.mint == config.flex_mint
     )]
-    pub user_flex: InterfaceAccount<'info, TokenAccount>,
+    pub user_flex: Account<'info, SplTokenAccount>,
     #[account(address = config.usdc_mint)]
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub usdc_mint: Account<'info, TokenMint>,
     #[account(mut, address = config.usdc_vault)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Account<'info, SplTokenAccount>,
     #[account(address = config.usdt_vault)]
-    pub usdt_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdt_vault: Account<'info, SplTokenAccount>,
     #[account(mut, address = config.flex_mint)]
-    pub flex_mint: InterfaceAccount<'info, Mint>,
+    pub flex_mint: Account<'info, TokenMint>,
     /// CHECK: PDA signer for mint and vault authorities
     #[account(seeds = [MINT_AUTHORITY_SEED], bump = config.mint_authority_bump)]
     pub mint_authority: UncheckedAccount<'info>,
-    pub token_program: Program<'info, Token2022>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -411,25 +514,25 @@ pub struct RedeemFlex<'info> {
         constraint = user_flex.owner == user.key(),
         constraint = user_flex.mint == config.flex_mint
     )]
-    pub user_flex: InterfaceAccount<'info, TokenAccount>,
+    pub user_flex: Account<'info, SplTokenAccount>,
     #[account(
         mut,
         constraint = user_usdc.owner == user.key(),
         constraint = user_usdc.mint == config.usdc_mint
     )]
-    pub user_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub user_usdc: Account<'info, SplTokenAccount>,
     #[account(address = config.usdc_mint)]
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub usdc_mint: Account<'info, TokenMint>,
     #[account(mut, address = config.usdc_vault)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Account<'info, SplTokenAccount>,
     #[account(address = config.usdt_vault)]
-    pub usdt_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdt_vault: Account<'info, SplTokenAccount>,
     #[account(mut, address = config.flex_mint)]
-    pub flex_mint: InterfaceAccount<'info, Mint>,
+    pub flex_mint: Account<'info, TokenMint>,
     /// CHECK: PDA signer for mint and vault authorities
     #[account(seeds = [MINT_AUTHORITY_SEED], bump = config.mint_authority_bump)]
     pub mint_authority: UncheckedAccount<'info>,
-    pub token_program: Program<'info, Token2022>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -446,6 +549,7 @@ pub struct DepositEvent {
     pub usdc_amount: u64,
     pub flex_minted: u64,
     pub nav: u64,
+    pub timestamp: i64,
 }
 
 #[event]
@@ -454,19 +558,25 @@ pub struct RedeemEvent {
     pub flex_burned: u64,
     pub usdc_returned: u64,
     pub nav: u64,
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct ConfigUpdatedEvent {
     pub admin: Pubkey,
     pub guardian: Pubkey,
+    pub emergency_admin: Pubkey,
+    pub paused: bool,
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct ConfigInitializedEvent {
     pub admin: Pubkey,
     pub guardian: Pubkey,
+    pub emergency_admin: Pubkey,
     pub flex_mint: Pubkey,
+    pub timestamp: i64,
 }
 
 #[error_code]
@@ -493,4 +603,14 @@ pub enum BasketError {
     ZeroTotalAssets,
     #[msg("Bump not found in context")]
     BumpNotFound,
+    #[msg("Contract is paused")]
+    ContractPaused,
+    #[msg("Slippage tolerance exceeded")]
+    SlippageExceeded,
+    #[msg("Daily deposit limit exceeded")]
+    DailyDepositLimitExceeded,
+    #[msg("Maximum deposit amount exceeded")]
+    MaxDepositAmountExceeded,
+    #[msg("Invalid limits provided")]
+    InvalidLimits,
 }
