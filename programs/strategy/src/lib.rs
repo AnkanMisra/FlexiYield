@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 const STRATEGY_CONFIG_SEED: &[u8] = b"strategy-config";
 const BPS_DENOMINATOR: u16 = 10_000;
 
-declare_id!("StraTegy1111111111111111111111111111111111");
+declare_id!("StraTegy11111111111111111111111111111111112");
 
 #[program]
 pub mod strategy {
@@ -15,7 +15,9 @@ pub mod strategy {
     ) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
-        let InitializeStrategyBumps { config: config_bump } = ctx.bumps;
+        let InitializeStrategyBumps {
+            config: config_bump,
+        } = ctx.bumps;
         config.bump = config_bump;
         config.admin = ctx.accounts.admin.key();
         config.guardian = if params.guardian == Pubkey::default() {
@@ -50,15 +52,15 @@ pub mod strategy {
         Ok(())
     }
 
-    pub fn set_targets(
-        ctx: Context<UpdateStrategy>,
-        targets: TargetWeights,
-    ) -> Result<()> {
+    pub fn set_targets(ctx: Context<UpdateStrategy>, targets: TargetWeights) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
         // Validate target weights sum to 10,000 bps (100%)
         require!(
-            targets.usdc_weight_bps.saturating_add(targets.usdt_weight_bps) == BPS_DENOMINATOR,
+            targets
+                .usdc_weight_bps
+                .saturating_add(targets.usdt_weight_bps)
+                == BPS_DENOMINATOR,
             StrategyError::InvalidTargetWeights
         );
 
@@ -83,17 +85,11 @@ pub mod strategy {
         Ok(())
     }
 
-    pub fn set_thresholds(
-        ctx: Context<UpdateStrategy>,
-        threshold: DriftThreshold,
-    ) -> Result<()> {
+    pub fn set_thresholds(ctx: Context<UpdateStrategy>, threshold: DriftThreshold) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
         // Validate threshold is reasonable (0-1000 bps = 0-10%)
-        require!(
-            threshold.bps <= 1_000,
-            StrategyError::InvalidThreshold
-        );
+        require!(threshold.bps <= 1_000, StrategyError::InvalidThreshold);
 
         config.drift_threshold = threshold;
         config.last_updated = Clock::get()?.unix_timestamp;
@@ -168,24 +164,24 @@ pub struct InitializeStrategyParams {
     pub guardian: Pubkey,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct TargetWeights {
     pub usdc_weight_bps: u16,
     pub usdt_weight_bps: u16,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct DriftThreshold {
     pub bps: u16,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct WeightCaps {
     pub usdc_cap_bps: u16,
     pub usdt_cap_bps: u16,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
 pub struct OracleSignals {
     pub usdc_apy_bps: i32,
     pub usdt_apy_bps: i32,
@@ -206,7 +202,7 @@ pub struct StrategyConfig {
 }
 
 impl StrategyConfig {
-    pub const SPACE: usize = 8 + 1 + (2 * 32) + 4 + 2 + 2 + 2 + 2 + 2 + 2 + 4 + 1 + 1 + 8;
+    pub const SPACE: usize = 8 + 1 + (2 * 32) + 8 + 8 + 8 + 2 + 2 + 2 + 2 + 4 + 1 + 1 + 8;
 }
 
 #[derive(Accounts)]
