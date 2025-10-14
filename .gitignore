@@ -4,9 +4,9 @@ Cargo.lock
 node_modules/
 
 # Package manager lock files
-pnpm-lock.yaml
-yarn.lock
-package-lock.json
+# pnpm-lock.yaml
+# yarn.lock
+# package-lock.json
 
 # Environment variables (workspace level)
 .env
@@ -53,6 +53,12 @@ test-ledger/
 **/private-key*
 **/secret*
 **/*.pem
+
+# Scripts generated files
+scripts/*.json
+scripts/wallet-keypair.json
+scripts/demo-vault.json
+scripts/addresses.json
 
 # Build artifacts in scripts
 scripts/dist/

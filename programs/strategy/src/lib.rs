@@ -136,14 +136,20 @@ pub mod strategy {
         let config = &mut ctx.accounts.config;
 
         // Validate APY values are reasonable (-50,000 to 50,000 bps = -500% to 500%)
-        require!(
-            oracle_values.usdc_apy_bps.abs() <= 50_000,
-            StrategyError::InvalidApyValue
-        );
-        require!(
-            oracle_values.usdt_apy_bps.abs() <= 50_000,
-            StrategyError::InvalidApyValue
-        );
+        // Safe check for i32::abs to avoid overflow on i32::MIN
+        let usdc_apy_abs = if oracle_values.usdc_apy_bps == i32::MIN {
+            50_001 // Clearly exceeds the limit
+        } else {
+            oracle_values.usdc_apy_bps.abs()
+        };
+        let usdt_apy_abs = if oracle_values.usdt_apy_bps == i32::MIN {
+            50_001 // Clearly exceeds the limit
+        } else {
+            oracle_values.usdt_apy_bps.abs()
+        };
+
+        require!(usdc_apy_abs <= 50_000, StrategyError::InvalidApyValue);
+        require!(usdt_apy_abs <= 50_000, StrategyError::InvalidApyValue);
 
         config.oracle_signals = oracle_values;
         config.last_updated = Clock::get()?.unix_timestamp;

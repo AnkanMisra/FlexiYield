@@ -6,24 +6,6 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-  "@coral-xyz/anchor": "0.30.1",
-    "@solana/spl-token": "^0.4.14",
-    "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-react": "^0.15.39",
-    "@solana/wallet-adapter-react-ui": "^0.9.39",
-    "@solana/wallet-adapter-wallets": "^0.19.37",
-    "@solana/web3.js": "^1.98.4",
-    "next": "15.5.4",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
-  },
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
     "lint": "eslint",
     "airdrop": "npx ts-node ../scripts/airdrop-devnet-sol.ts",
     "create-mints": "npx ts-node ../scripts/create-mints.ts",
@@ -34,7 +16,7 @@
     "full-demo": "pnpm setup-devnet && pnpm demo"
   },
   "dependencies": {
-  "@coral-xyz/anchor": "0.30.1",
+    "@coral-xyz/anchor": "0.30.1",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",

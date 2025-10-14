@@ -1,5 +1,5 @@
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { ConnectionManager, PDAUtils } from '../app/src/lib/solana-adapter';
+import { ConnectionManager, PDAUtils } from '../shared/lib/solana-adapter';
 import fs from 'fs';
 import path from 'path';
 

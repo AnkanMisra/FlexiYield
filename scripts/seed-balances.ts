@@ -2,7 +2,7 @@ import { Keypair } from "@solana/web3.js";
 import {
   getOrCreateAssociatedTokenAccount,
   mintTo,
-  TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { wallet } from "./wallet";
@@ -57,7 +57,7 @@ async function seedBalances(): Promise<void> {
       false,
       undefined,
       undefined,
-      TOKEN_2022_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
     );
     console.log(`✅ User USDCd account: ${userUsdcAccount.address.toBase58()}`);
 
@@ -69,7 +69,7 @@ async function seedBalances(): Promise<void> {
       false,
       undefined,
       undefined,
-      TOKEN_2022_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
     );
     console.log(`✅ User USDTd account: ${userUsdtAccount.address.toBase58()}`);
 

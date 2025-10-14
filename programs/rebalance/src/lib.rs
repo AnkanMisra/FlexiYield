@@ -102,9 +102,10 @@ pub mod rebalance {
         // For MVP: Log rebalance details instead of executing actual swaps
         // In production: implement DEX CPI here
         msg!(
-            "Rebalance needed: {} {} -> USDT",
+            "Rebalance needed: {} {} -> {}",
             if from_usdc_to_usdt { "USDC" } else { "USDT" },
-            swap_amount
+            swap_amount,
+            if from_usdc_to_usdt { "USDT" } else { "USDC" }
         );
         msg!(
             "Target composition: {} USDC, {} USDT",

@@ -128,7 +128,7 @@ This roadmap tracks delivery of the 5-day Solana devnet MVP defined in `Project_
 2. **✅ COMPILATION INFRASTRUCTURE** - **COMPLETE**
    - ✅ Cargo build system working correctly across all programs
    - ✅ Anchor workspace configuration optimized
-   - ✅ Program ID validation (exactly 32 characters) enforced
+   - ✅ Program ID validation (exactly 32 bytes / 32-byte public key, base58-encoded ~44 chars) enforced
    - ✅ Import conflicts resolved (ID constant management)
    - ✅ Test code properly separated from production code
    - ✅ Account validation and PDA management implemented

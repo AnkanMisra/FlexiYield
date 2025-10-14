@@ -31,7 +31,7 @@ async function testConnection(): Promise<void> {
     console.log(`✅ Solana version: ${version['solana-core']}`);
 
     console.log('\n🎉 All tests passed! Scripts are ready to use.');
-    console.log('🚀 Run "pnpm scripts:demo:setup" for complete MVP setup');
+    console.log('🚀 Run "pnpm setup-devnet" for minimal setup or "pnpm full-demo" for the complete demo');
 
   } catch (error) {
     console.error('❌ Test failed:', error);
