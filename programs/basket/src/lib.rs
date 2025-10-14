@@ -8,6 +8,12 @@ use anchor_spl::token::{Mint as TokenMint, TokenAccount as SplTokenAccount};
 pub const BASKET_DECIMALS: u8 = 6;
 const DECIMAL_FACTOR: u128 = 1_000_000;
 const BPS_DENOMINATOR: u16 = 10_000;
+const MAX_PRICE_IMPACT_BPS: u16 = 500; // 5%
+// Conservative per-transaction deposit limit for early deployment safety.
+// Set low (10 USDC) to limit exposure during testing and initial rollout.
+// Should be raised to 100-1000 USDC after successful mainnet validation
+// and sufficient liquidity accumulation.
+const MAX_SINGLE_DEPOSIT: u64 = 10_000_000; // 10 USDC with 6 decimals
 const CONFIG_SEED: &[u8] = b"basket-config";
 const MINT_AUTHORITY_SEED: &[u8] = b"mint-authority";
 const VAULT_SEED: &[u8] = b"vault";
@@ -142,7 +148,6 @@ pub mod basket {
             require!(total_assets_before > 0, BasketError::ZeroTotalAssets);
 
             // SECURITY: Additional per-transaction limit to prevent abuse
-            const MAX_SINGLE_DEPOSIT: u64 = 10_000_000; // 10 USDC max per transaction
             require!(
                 params.amount <= MAX_SINGLE_DEPOSIT,
                 BasketError::SingleDepositTooLarge
@@ -173,9 +178,14 @@ pub mod basket {
             require!(minted >= params.min_flex_out, BasketError::SlippageExceeded);
 
             // SECURITY: Maximum price impact protection (5%)
-            const MAX_PRICE_IMPACT_BPS: u16 = 500; // 5%
             let max_acceptable_price = current_price
                 .checked_mul((BPS_DENOMINATOR + MAX_PRICE_IMPACT_BPS) as u128)
+                .ok_or(BasketError::MathOverflow)?
+                .checked_div(BPS_DENOMINATOR as u128)
+                .ok_or(BasketError::MathOverflow)?;
+
+            let min_acceptable_price = current_price
+                .checked_mul((BPS_DENOMINATOR - MAX_PRICE_IMPACT_BPS) as u128)
                 .ok_or(BasketError::MathOverflow)?
                 .checked_div(BPS_DENOMINATOR as u128)
                 .ok_or(BasketError::MathOverflow)?;
@@ -195,7 +205,7 @@ pub mod basket {
                 .ok_or(BasketError::ZeroNav)?;
 
             require!(
-                new_price <= max_acceptable_price,
+                new_price >= min_acceptable_price && new_price <= max_acceptable_price,
                 BasketError::ExcessivePriceImpact
             );
 

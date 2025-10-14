@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 const STRATEGY_CONFIG_SEED: &[u8] = b"strategy-config";
 const BPS_DENOMINATOR: u16 = 10_000;
 
-declare_id!("StraTegy11111111111111111111111111111111112");
+declare_id!("StraTegy11111111111111111111111111111111111112");
 
 #[program]
 pub mod strategy {

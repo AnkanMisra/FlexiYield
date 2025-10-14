@@ -8,6 +8,8 @@ pub const USDC_MINT: Pubkey = pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTD
 pub const USDT_MINT: Pubkey = pubkey!("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"); // devnet USDT
 
 const REBALANCE_CONFIG_SEED: &[u8] = b"rebalance-config";
+const VAULT_AUTHORITY_SEED: &[u8] = b"vault-authority";
+const VAULT_SEED: &[u8] = b"vault";
 const BPS_DENOMINATOR: u16 = 10_000;
 
 #[program]
@@ -20,10 +22,19 @@ pub mod rebalance {
     ) -> Result<()> {
         let config = &mut ctx.accounts.config;
 
+        // Validate admin is not the default pubkey
+        require!(
+            ctx.accounts.admin.key() != Pubkey::default(),
+            RebalanceError::InvalidAdmin
+        );
+
         let InitializeRebalanceBumps {
             config: config_bump,
+            vault_authority: vault_authority_bump,
+            ..
         } = ctx.bumps;
         config.bump = config_bump;
+        config.vault_authority_bump = vault_authority_bump;
         config.admin = ctx.accounts.admin.key();
         config.guardian = if params.guardian == Pubkey::default() {
             ctx.accounts.admin.key()
@@ -44,6 +55,12 @@ pub mod rebalance {
 
     pub fn rebalance_once(ctx: Context<ExecuteRebalance>) -> Result<()> {
         let config = &ctx.accounts.config;
+
+        // Authorization check: Only admin or guardian can trigger rebalancing
+        require!(
+            ctx.accounts.authority.key() == config.admin || ctx.accounts.authority.key() == config.guardian,
+            RebalanceError::UnauthorizedRebalance
+        );
 
         require!(!config.paused, RebalanceError::RebalancingPaused);
 
@@ -104,7 +121,7 @@ pub mod rebalance {
         require!(swap_amount > 0, RebalanceError::ZeroSwapAmount);
 
         // For MVP: Log rebalance details instead of executing actual swaps
-        // In production: implement DEX CPI here
+        // In production: implement DEX CPI here using vault_authority as signer
         msg!(
             "Rebalance needed: {} {} -> {}",
             if from_usdc_to_usdt { "USDC" } else { "USDT" },
@@ -117,6 +134,21 @@ pub mod rebalance {
             target_usdt
         );
 
+        // TODO: Implement secure swap using program-controlled vaults
+        // Example secure transfer pattern:
+        // let vault_authority_bump = [config.vault_authority_bump];
+        // let signer_seeds: &[&[&[u8]]] = &[&[VAULT_AUTHORITY_SEED, &vault_authority_bump]];
+        // let transfer_ctx = CpiContext::new_with_signer(
+        //     ctx.accounts.token_program.to_account_info(),
+        //     Transfer {
+        //         from: source_vault.to_account_info(),
+        //         to: dest_vault.to_account_info(),
+        //         authority: ctx.accounts.vault_authority.to_account_info(),
+        //     },
+        //     signer_seeds,
+        // );
+        // transfer(transfer_ctx, swap_amount)?;
+
         // Update rebalance config
         let config = &mut ctx.accounts.config;
         config.last_rebalance = current_time;
@@ -128,8 +160,8 @@ pub mod rebalance {
         emit!(RebalancedEvent {
             usdc_before: usdc_balance,
             usdt_before: usdt_balance,
-            usdc_after: target_usdc,
-            usdt_after: target_usdt,
+            usdc_target: target_usdc,
+            usdt_target: target_usdt,
             swap_amount,
             from_usdc_to_usdt,
             timestamp: current_time,
@@ -171,6 +203,7 @@ pub struct InitializeRebalanceParams {
 #[account]
 pub struct RebalanceConfig {
     pub bump: u8,
+    pub vault_authority_bump: u8,
     pub admin: Pubkey,
     pub guardian: Pubkey,
     pub paused: bool,
@@ -179,7 +212,7 @@ pub struct RebalanceConfig {
 }
 
 impl RebalanceConfig {
-    pub const SPACE: usize = 8 + 1 + (2 * 32) + 1 + 8 + 8; // 90 bytes
+    pub const SPACE: usize = 8 + 1 + 1 + (2 * 32) + 1 + 8 + 8; // 91 bytes
 }
 
 #[derive(Accounts)]
@@ -196,6 +229,30 @@ pub struct InitializeRebalance<'info> {
         bump
     )]
     pub config: Account<'info, RebalanceConfig>,
+    /// CHECK: PDA for vault authority
+    #[account(seeds = [VAULT_AUTHORITY_SEED], bump)]
+    pub vault_authority: AccountInfo<'info>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [VAULT_SEED, USDC_MINT.as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = vault_authority
+    )]
+    pub usdc_vault: Account<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [VAULT_SEED, USDT_MINT.as_ref()],
+        bump,
+        token::mint = usdt_mint,
+        token::authority = vault_authority
+    )]
+    pub usdt_vault: Account<'info, TokenAccount>,
+    pub usdc_mint: Account<'info, anchor_spl::token::Mint>,
+    pub usdt_mint: Account<'info, anchor_spl::token::Mint>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -211,14 +268,22 @@ pub struct ExecuteRebalance<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    // Token vaults with proper validation
+    /// CHECK: PDA for vault authority
+    #[account(seeds = [VAULT_AUTHORITY_SEED], bump = config.vault_authority_bump)]
+    pub vault_authority: AccountInfo<'info>,
+
+    // Program-controlled token vaults (PDAs)
     #[account(
-        constraint = usdc_vault.owner == config.admin,
+        mut,
+        seeds = [VAULT_SEED, USDC_MINT.as_ref()],
+        bump,
         constraint = usdc_vault.mint == USDC_MINT,
     )]
     pub usdc_vault: Account<'info, TokenAccount>,
     #[account(
-        constraint = usdt_vault.owner == config.admin,
+        mut,
+        seeds = [VAULT_SEED, USDT_MINT.as_ref()],
+        bump,
         constraint = usdt_vault.mint == USDT_MINT,
     )]
     pub usdt_vault: Account<'info, TokenAccount>,
@@ -249,8 +314,8 @@ pub struct RebalanceInitializedEvent {
 pub struct RebalancedEvent {
     pub usdc_before: u64,
     pub usdt_before: u64,
-    pub usdc_after: u64,
-    pub usdt_after: u64,
+    pub usdc_target: u64,
+    pub usdt_target: u64,
     pub swap_amount: u64,
     pub from_usdc_to_usdt: bool,
     pub timestamp: i64,
@@ -280,4 +345,8 @@ pub enum RebalanceError {
     NoRebalanceNeeded,
     #[msg("Swap amount must be greater than zero")]
     ZeroSwapAmount,
+    #[msg("Only admin or guardian can trigger rebalancing")]
+    UnauthorizedRebalance,
+    #[msg("Admin cannot be the default pubkey")]
+    InvalidAdmin,
 }
