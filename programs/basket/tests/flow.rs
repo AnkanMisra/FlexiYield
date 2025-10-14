@@ -25,7 +25,7 @@ async fn initialize_deposit_redeem_flow() -> Result<(), TransportError> {
     program_test.add_program(
         "spl_token",
         spl_token::id(),
-        spl_token::processor::Processor::process,
+        processor!(spl_token::processor::Processor::process),
     );
 
     let (mut banks_client, payer, _) = program_test.start().await;

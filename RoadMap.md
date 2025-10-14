@@ -4,7 +4,7 @@ This roadmap tracks delivery of the 5-day Solana devnet MVP defined in `Project_
 
 ## Scope Recap (Governance-Aligned)
 - **Network:** Solana devnet only; no mainnet logic or bridges.
-- **Tokens:** Single deposit mint (`USDCd`) with holdings in `USDCd` and `USDTd` (SPL Token 2022, 6 decimals).
+- **Tokens:** Single deposit mint (`USDCd`) with holdings in `USDCd` and `USDTd` (SPL Token, 6 decimals).
 - **Programs:** Anchor-based `basket`, `strategy`, and `rebalance` with deterministic, event-emitting logic.
 - **Frontend:** Next.js (TypeScript, pnpm) app with wallet connect, deposit/withdraw flows, dashboard analytics, admin controls, and deterministic PDA reads.
 - **Scripts:** TypeScript utilities for airdrop, mint creation, seeding balances, deploying programs, and demo automation.
@@ -59,7 +59,7 @@ This roadmap tracks delivery of the 5-day Solana devnet MVP defined in `Project_
 
 ### 4. Scripts (`scripts/` directory)
 - ☐ **airdrop-devnet-sol.ts**: request SOL for configured keypairs.
-- ☐ **create-mints.ts**: create USDCd, USDTd, and FLEX SPL Token 2022 mints with 6 decimals; persist addresses.
+- ☐ **create-mints.ts**: create USDCd, USDTd, and FLEX SPL Token mints with 6 decimals; persist addresses.
 - ☐ **seed-balances.ts**: fund demo vaults and user accounts with initial token balances.
 - ☐ **deploy-programs.ts**: build/deploy Anchor programs, capture program IDs, and export fresh IDLs to `app/src/idl/`.
 - ☐ **demo helpers**: optional script to simulate strategy tweaks and trigger rebalances for recorded demos.
