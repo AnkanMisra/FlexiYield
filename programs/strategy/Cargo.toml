@@ -10,3 +10,8 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 anchor-lang = { workspace = true }
 anchor-spl = { workspace = true }
+
+[dev-dependencies]
+solana-program-test = "1.18.16"
+solana-sdk = "1.18.16"
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }
