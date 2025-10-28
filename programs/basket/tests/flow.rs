@@ -1,5 +1,5 @@
 use anchor_lang::{prelude::*, AccountDeserialize, InstructionData, ToAccountMetas};
-use basket::{self, InitializeBasketParams};
+use basket::{self, DepositUsdcParams, InitializeBasketParams, RedeemFlexParams, UpdateConfigParams};
 use solana_program_test::{processor, BanksClient, ProgramTest};
 use solana_sdk::{
     instruction::Instruction,
@@ -15,7 +15,7 @@ const CONFIG_SEED: &[u8] = b"basket-config";
 const MINT_AUTHORITY_SEED: &[u8] = b"mint-authority";
 const VAULT_SEED: &[u8] = b"vault";
 const DECIMALS: u8 = basket::BASKET_DECIMALS;
-const USDC_DEPOSIT: u64 = 10_000_000; // 10 USDCd with 6 decimals
+const USDC_DEPOSIT: u64 = 10_000_000; // 10 USDC with 6 decimals
 const FLEX_REDEEM: u64 = 4_000_000; // redeem 4 FLEX
 const NAV_MICROS: u64 = 1_000_000; // NAV precision matches basket program
 
@@ -101,12 +101,25 @@ async fn initialize_deposit_redeem_flow() -> Result<(), TransportError> {
         data: basket::instruction::InitializeBasket {
             params: InitializeBasketParams {
                 guardian: admin.pubkey(),
+                emergency_admin: admin.pubkey(),
+                max_deposit_amount: 50_000_000, // 50 USDC per tx
+                max_daily_deposit: 500_000_000, // 500 USDC per day
             },
         }
         .data(),
     };
 
     send_transaction(&mut banks_client, &payer, &[init_ix], &[&admin]).await?;
+
+    // Verify initialization
+    let config = fetch_config(&mut banks_client, &config_pda).await;
+    assert_eq!(config.admin, admin.pubkey());
+    assert_eq!(config.guardian, admin.pubkey());
+    assert_eq!(config.emergency_admin, admin.pubkey());
+    assert_eq!(config.max_deposit_amount, 50_000_000);
+    assert_eq!(config.max_daily_deposit, 500_000_000);
+    assert_eq!(config.paused, false);
+    assert_eq!(config.nav, NAV_MICROS);
 
     let deposit_ix = Instruction {
         program_id: basket::ID,
@@ -124,7 +137,10 @@ async fn initialize_deposit_redeem_flow() -> Result<(), TransportError> {
         }
         .to_account_metas(None),
         data: basket::instruction::DepositUsdc {
-            amount: USDC_DEPOSIT,
+            params: DepositUsdcParams {
+                amount: USDC_DEPOSIT,
+                min_flex_out: 9_000_000, // 9 FLEX minimum (90% of expected)
+            },
         }
         .data(),
     };
@@ -135,6 +151,7 @@ async fn initialize_deposit_redeem_flow() -> Result<(), TransportError> {
     assert_eq!(config_after_deposit.nav, NAV_MICROS);
     assert_eq!(config_after_deposit.flex_supply_snapshot, USDC_DEPOSIT);
     assert_eq!(config_after_deposit.last_total_assets, USDC_DEPOSIT);
+    assert_eq!(config_after_deposit.daily_deposit_volume, USDC_DEPOSIT);
 
     let user_flex_after = fetch_token_account(&mut banks_client, &user_flex.pubkey()).await;
     assert_eq!(user_flex_after.amount, USDC_DEPOSIT);
@@ -155,7 +172,10 @@ async fn initialize_deposit_redeem_flow() -> Result<(), TransportError> {
         }
         .to_account_metas(None),
         data: basket::instruction::RedeemFlex {
-            amount: FLEX_REDEEM,
+            params: RedeemFlexParams {
+                amount: FLEX_REDEEM,
+                min_usdc_out: 3_600_000, // 3.6 USDC minimum (90% of expected)
+            },
         }
         .data(),
     };
@@ -186,6 +206,178 @@ async fn initialize_deposit_redeem_flow() -> Result<(), TransportError> {
     assert_eq!(vault_final.amount, USDC_DEPOSIT - FLEX_REDEEM);
 
     Ok(())
+}
+
+#[tokio::test]
+async fn test_pause_and_unpause() -> Result<(), TransportError> {
+    let (mut banks_client, payer, admin, config_pda, _, _, _, _) =
+        setup_initialized_basket().await?;
+
+    // Pause the contract
+    let pause_ix = Instruction {
+        program_id: basket::ID,
+        accounts: basket::accounts::UpdateConfig {
+            admin: admin.pubkey(),
+            config: config_pda,
+        }
+        .to_account_metas(None),
+        data: basket::instruction::UpdateConfig {
+            params: UpdateConfigParams {
+                paused: Some(true),
+                ..Default::default()
+            },
+        }
+        .data(),
+    };
+
+    send_transaction(&mut banks_client, &payer, &[pause_ix], &[&admin]).await?;
+
+    let config = fetch_config(&mut banks_client, &config_pda).await;
+    assert_eq!(config.paused, true);
+
+    // Unpause the contract
+    let unpause_ix = Instruction {
+        program_id: basket::ID,
+        accounts: basket::accounts::UpdateConfig {
+            admin: admin.pubkey(),
+            config: config_pda,
+        }
+        .to_account_metas(None),
+        data: basket::instruction::UpdateConfig {
+            params: UpdateConfigParams {
+                paused: Some(false),
+                ..Default::default()
+            },
+        }
+        .data(),
+    };
+
+    send_transaction(&mut banks_client, &payer, &[unpause_ix], &[&admin]).await?;
+
+    let config = fetch_config(&mut banks_client, &config_pda).await;
+    assert_eq!(config.paused, false);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_update_config() -> Result<(), TransportError> {
+    let (mut banks_client, payer, admin, config_pda, _, _, _, _) =
+        setup_initialized_basket().await?;
+
+    let new_guardian = Keypair::new();
+    let new_emergency_admin = Keypair::new();
+
+    let update_ix = Instruction {
+        program_id: basket::ID,
+        accounts: basket::accounts::UpdateConfig {
+            admin: admin.pubkey(),
+            config: config_pda,
+        }
+        .to_account_metas(None),
+        data: basket::instruction::UpdateConfig {
+            params: UpdateConfigParams {
+                new_guardian: Some(new_guardian.pubkey()),
+                new_emergency_admin: Some(new_emergency_admin.pubkey()),
+                max_deposit_amount: Some(100_000_000),
+                max_daily_deposit: Some(1_000_000_000),
+                ..Default::default()
+            },
+        }
+        .data(),
+    };
+
+    send_transaction(&mut banks_client, &payer, &[update_ix], &[&admin]).await?;
+
+    let config = fetch_config(&mut banks_client, &config_pda).await;
+    assert_eq!(config.guardian, new_guardian.pubkey());
+    assert_eq!(config.emergency_admin, new_emergency_admin.pubkey());
+    assert_eq!(config.max_deposit_amount, 100_000_000);
+    assert_eq!(config.max_daily_deposit, 1_000_000_000);
+
+    Ok(())
+}
+
+async fn setup_initialized_basket() -> Result<
+    (
+        BanksClient,
+        Keypair,
+        Keypair,
+        Pubkey,
+        Keypair,
+        Keypair,
+        Keypair,
+        Pubkey,
+    ),
+    TransportError,
+> {
+    let mut program_test = ProgramTest::new("basket", basket::ID, basket::entry);
+    program_test.add_program(
+        "spl_token",
+        spl_token::id(),
+        processor!(spl_token::processor::Processor::process),
+    );
+
+    let (mut banks_client, payer, _) = program_test.start().await;
+
+    let admin = Keypair::new();
+    fund_account(&mut banks_client, &payer, &admin.pubkey(), 5_000_000_000).await?;
+
+    let usdc_mint = Keypair::new();
+    let usdt_mint = Keypair::new();
+    let flex_mint = Keypair::new();
+
+    create_mint(&mut banks_client, &payer, &usdc_mint, &admin, DECIMALS).await?;
+    create_mint(&mut banks_client, &payer, &usdt_mint, &admin, DECIMALS).await?;
+    create_mint(&mut banks_client, &payer, &flex_mint, &admin, DECIMALS).await?;
+
+    let (config_pda, _) = Pubkey::find_program_address(&[CONFIG_SEED], &basket::ID);
+    let (mint_authority_pda, _) = Pubkey::find_program_address(&[MINT_AUTHORITY_SEED], &basket::ID);
+    let (usdc_vault_pda, _) =
+        Pubkey::find_program_address(&[VAULT_SEED, usdc_mint.pubkey().as_ref()], &basket::ID);
+    let (usdt_vault_pda, _) =
+        Pubkey::find_program_address(&[VAULT_SEED, usdt_mint.pubkey().as_ref()], &basket::ID);
+
+    let init_ix = Instruction {
+        program_id: basket::ID,
+        accounts: basket::accounts::InitializeBasket {
+            payer: payer.pubkey(),
+            admin: admin.pubkey(),
+            config: config_pda,
+            mint_authority: mint_authority_pda,
+            flex_mint: flex_mint.pubkey(),
+            usdc_mint: usdc_mint.pubkey(),
+            usdt_mint: usdt_mint.pubkey(),
+            usdc_vault: usdc_vault_pda,
+            usdt_vault: usdt_vault_pda,
+            token_program: spl_token::id(),
+            system_program: system_program::ID,
+            rent: sysvar::rent::ID,
+        }
+        .to_account_metas(None),
+        data: basket::instruction::InitializeBasket {
+            params: InitializeBasketParams {
+                guardian: admin.pubkey(),
+                emergency_admin: admin.pubkey(),
+                max_deposit_amount: 50_000_000,
+                max_daily_deposit: 500_000_000,
+            },
+        }
+        .data(),
+    };
+
+    send_transaction(&mut banks_client, &payer, &[init_ix], &[&admin]).await?;
+
+    Ok((
+        banks_client,
+        payer,
+        admin,
+        config_pda,
+        usdc_mint,
+        usdt_mint,
+        flex_mint,
+        mint_authority_pda,
+    ))
 }
 
 async fn fund_account(
